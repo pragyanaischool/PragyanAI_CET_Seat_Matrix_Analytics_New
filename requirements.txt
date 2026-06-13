@@ -22,7 +22,7 @@ duckduckgo-search
 
 # Environment Utilities
 python-dotenv
-
+opencv-python-headless
 faiss-cpu
 sentence-transformers
 huggingface-hub
