@@ -8,7 +8,6 @@ import pandas as pd
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from langchain_groq import ChatGroq
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
