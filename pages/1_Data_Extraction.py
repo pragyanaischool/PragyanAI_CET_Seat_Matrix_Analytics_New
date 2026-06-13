@@ -5,26 +5,26 @@ import sqlite3
 import os
 import tempfile
 import pypdf
-from typing import List, Optional
+from typing import List, Optional, Union
 from pydantic import BaseModel, Field
 from langchain_groq import ChatGroq
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import ChatPromptTemplate
 
-# ==========================================
-# 1. ENFORCED RECONSTRUCTION DATA SCHEMA
-# ==========================================
+# ==============================================================================
+# 1. ENFORCED RECONSTRUCTION DATA SCHEMA (WITH STRING STANDARDIZATION & NULL DEFENSE)
+# ==============================================================================
 class SeatMatrixRecord(BaseModel):
     college_name: str = Field(..., description="Full clean name of the institution (e.g., 'ACS College of Engineering' or 'THE KISHKINDA UNIVERSITY')")
-    city: Optional[str] = Field(None, description="City location name if clearly stated or extracted, otherwise null.")
-    district: Optional[str] = Field(None, description="Target district context if clearly stated, otherwise null.")
-    address: Optional[str] = Field(None, description="The complete clean street/location address string.")
-    dept: Optional[str] = Field(None, description="Academic department course / branch category.")
-    intake: Optional[int] = Field(None, description="Total absolute allocated seat matrix capacity value. Convert to integer format.")
-    intake_year: Optional[int] = Field(None, description="The structural allocation year context for this specific row.")
+    city: Union[str, None] = Field(default="", description="City location name if clearly stated or extracted, otherwise empty string. Do not use literal null.")
+    district: Union[str, None] = Field(default="", description="Target district context if clearly stated, otherwise empty string. Do not use literal null.")
+    address: Union[str, None] = Field(default="", description="The complete clean street/location address string or empty string. Do not use literal null.")
+    dept: Union[str, None] = Field(default="", description="The normalized academic department, course name, or branch name (e.g., 'COMPUTER SCIENCE AND ENGG'). Uniformly capture all variations here. Do not use literal null.")
+    intake: Union[int, None] = Field(default=0, description="Total absolute allocated seat matrix capacity value. Convert to integer format.")
+    intake_year: int = Field(..., description="The structural allocation year context for this specific row.")
 
 class SeatMatrixExtraction(BaseModel):
-    records: List[SeatMatrixRecord] = Field(default=[], description="Structured institutional rows matching target schema formatting.")
+    records: List[SeatMatrixRecord] = Field(default_factory=list, description="Structured institutional rows matching target schema formatting.")
 
 # ==========================================
 # 2. SEGMENTED DATABASE WRITE TRANSACTION
@@ -113,10 +113,10 @@ if st.button("Execute Guided Extraction Pipeline") and uploaded_file:
     log_status_pane = st.container()
     step1_pane = st.expander("📝 STEP 1 LOGS: Local Stream Text Extraction (Zero-Weight Engine)", expanded=True)
     step2_pane = st.expander("🔀 STEP 2 LOGS: Text Splitting & Fragment Isolation", expanded=False)
-    step3_pane = st.expander("🤖 STEP 3 LOGS: LLM Chunk Schema Parsing & DB Dump (Part-by-Part)", expanded=False)
+    step3_pane = st.expander("🤖 STEP 3 LOGS: LLM Chunk Schema Parsing & DB Dump (Part-by-Part)", expanded=True)
     
     with log_status_pane:
-        st.info(f"🚀 Starting core data pipeline execution framework using model framework: {model_selection}. Tracking updates below...")
+        st.info("🚀 Starting core data pipeline execution framework. Tracking updates below...")
 
     # --------------------------------------------------------------------------
     # PART 1: ZERO-WEIGHT LOCAL STREAM RECOVERY
@@ -158,21 +158,24 @@ if st.button("Execute Guided Extraction Pipeline") and uploaded_file:
     # PART 3: LLM CHUNK SCHEMA PARSING & PART-BY-PART DUMP
     # --------------------------------------------------------------------------
     with step3_pane:
-        st.write(f"🤖 Instantiating schema structural extractors via Groq API model: `{groq_model_id}`. Starting part-by-part loops...")
+        st.write("🤖 Instantiating schema structural extractors via Groq API. Starting part-by-part loops...")
         
-        # Injects the dynamic model tracker target securely using the mapped Groq ID
-        llm_router = ChatGroq(model=groq_model_id, temperature=0, api_key=groq_api_key)
-        structured_extractor = llm_router.with_structured_output(SeatMatrixExtraction)
-        
+        # Base setup for the extraction template configuration prompt layout rules
         prompt_blueprint = ChatPromptTemplate.from_messages([
             ("system", """You are an expert tabular data translation engine. 
-            Convert raw engineering seat matrices, lines, and blocks into precise data models.
+            Convert raw engineering seat matrices, schedules, lines, and blocks into precise data models matching the target structural schema format.
             
-            CRITICAL DESIGN DIRECTIVES:
+            CRITICAL SYNONYM NORMALIZATION DIRECTIVES:
+            1. The text input will alternate column headings interchangeably using terms like 'Course Name', 'Branch Name', 'branch', or 'dept'. 
+            2. You MUST treat 'Course Name', 'Branch Name', 'branch', and 'dept' as completely identical concepts. 
+            3. Normalize and map ALL of those discovered parameters exclusively into the unified schema field named `dept` (e.g., whether it reads 'Course Name: COMPUTER SCIENCE AND ENGG' or '5 B TECH IN MECHANICAL ENGINEERING', map it straight into the `dept` field property).
+            
+            CRITICAL DESIGN & VALIDATION SAFETY DIRECTIVES:
             1. Extract the 'college_name' precisely. Do not truncate strings. (e.g., 'THE KISHKINDA UNIVERSITY').
-            2. If structural address contexts mention items like 'BANGALORE' or 'BELLARI', map that data directly to 'city' or 'district'.
-            3. If an explicit column cell property cannot be located anywhere within the text context, explicitly return null for that attribute.
-            4. Force 'intake_year' explicitly to {year} for every single individual record parsed.
+            2. If structural address contexts mention items like 'BANGALORE', 'BENGALURU', or 'BELLARI', map that data directly to the corresponding 'city' or 'district' fields.
+            3. CRITICAL DEFENSE AGAINST 400 ERRORS: If an explicit column cell property or attribute value cannot be found anywhere within the provided text block fragment, you MUST output an empty string ("") for that field.
+            4. NEVER output a literal JSON `null` value for any key parameter under any circumstance. This violates the API tool-use validator and crashes the generation loop.
+            5. Force 'intake_year' explicitly to {year} for every single individual record parsed.
             """),
             ("user", "Convert data attributes cleanly from this document context block:\n\n{text_fragment}")
         ])
@@ -193,8 +196,19 @@ if st.button("Execute Guided Extraction Pipeline") and uploaded_file:
                 text_fragment=chunk_fragment
             )
             
-            st.write(f"📡 Dispatching block {chunk_display_id} to Groq target framework...")
+            # Dynamic Model Rotation Selector Check Engine
+            # Resolves potential stability errors on high-fatigue or complex table blocks dynamically
+            active_model_id = groq_model_id
+            if chunk_display_id >= 8 and groq_model_id in ["llama-3.1-8b-instant", "gemma2-9b-it"]:
+                st.caption("🔄 *[PIPELINE OPTIMIZATION]*: Switching tracking over to high-reasoning flagship layer `llama-3.3-70b-versatile` to reinforce table compliance across processing thresholds...")
+                active_model_id = "llama-3.3-70b-versatile"
+
+            st.write(f"📡 Dispatching block {chunk_display_id} to Groq engine execution path via `{active_model_id}`...")
+            
             try:
+                llm_router = ChatGroq(model=active_model_id, temperature=0, api_key=groq_api_key)
+                structured_extractor = llm_router.with_structured_output(SeatMatrixExtraction)
+                
                 extraction_result = structured_extractor.invoke(formatted_prompt)
                 
                 chunk_records = []
@@ -208,10 +222,13 @@ if st.button("Execute Guided Extraction Pipeline") and uploaded_file:
                     # Turn batch records into a unified data frame instance
                     chunk_df = pd.DataFrame(chunk_records)
                     
-                    # Keep schema properties uniform (Force null components to match requirements)
+                    # Post-processing layer validation: Ensure missing variables perfectly fill as standard strings
                     for col in ["city", "district", "address", "dept", "intake"]:
                         if col not in chunk_df.columns:
-                            chunk_df[col] = None
+                            chunk_df[col] = ""
+                        else:
+                            # Catch and remove any lingering null structures safely
+                            chunk_df[col] = chunk_df[col].fillna("")
                     
                     # Re-align index positions explicitly
                     chunk_df = chunk_df[["college_name", "city", "district", "address", "dept", "intake", "intake_year"]]
@@ -225,11 +242,12 @@ if st.button("Execute Guided Extraction Pipeline") and uploaded_file:
                     st.warning(f"⚠️ Block {chunk_display_id} did not yield clean row models matching validations. Skipping write transaction.")
             except Exception as invoke_error:
                 st.error(f"❌ Failed inference tracking execution on Block {chunk_display_id}: {str(invoke_error)}")
+                st.info("💡 Pro Tip: The pipeline will continue processing subsequent blocks to prevent losing previous ingestion tracking work.")
             
             progress_bar.progress(chunk_display_id / len(text_fragments))
 
         # --------------------------------------------------------------------------
-        # PIPELINE RUN CONSOLIDATION
+        # PIPELINE RUN CONSOLIDATION & DYNAMIC FILTER LOOKUP VIEW PANEL
         # --------------------------------------------------------------------------
         st.markdown("---")
         st.markdown("## 🏁 PIPELINE RECONSTRUCTION CONSOLIDATION STATUS")
@@ -239,7 +257,9 @@ if st.button("Execute Guided Extraction Pipeline") and uploaded_file:
             
             for col in ["city", "district", "address", "dept", "intake"]:
                 if col not in final_consolidated_df.columns:
-                    final_consolidated_df[col] = None
+                    final_consolidated_df[col] = ""
+                else:
+                    final_consolidated_df[col] = final_consolidated_df[col].fillna("")
                     
             final_consolidated_df = final_consolidated_df[[
                 "college_name", "city", "district", "address", "dept", "intake", "intake_year"
@@ -258,5 +278,37 @@ if st.button("Execute Guided Extraction Pipeline") and uploaded_file:
                 file_name=f"seat_matrix_complete_log_{target_year}.csv",
                 mime="text/csv"
             )
+            
+            # ==================================================================
+            # 5. DYNAMIC FILTER BASED VIEW MODULE PANEL
+            # ==================================================================
+            st.markdown("---")
+            st.markdown("### 🔍 Live Extraction Register Filter Console")
+            st.markdown("Apply parameters to segment the raw in-memory records below on-the-fly:")
+            
+            # Isolate list constraints dynamically from currently extracted data rows
+            unique_cities = sorted(list(set([str(c).strip() for c in final_consolidated_df["city"].unique() if c])))
+            unique_branches = sorted(list(set([str(b).strip() for b in final_consolidated_df["dept"].unique() if b])))
+            
+            f_col1, f_col2 = st.columns(2)
+            with f_col1:
+                sel_cities = st.multiselect("Filter On-The-Fly View by City Location:", options=unique_cities, default=unique_cities[:2] if unique_cities else [])
+            with f_col2:
+                sel_branches = st.multiselect("Filter On-The-Fly View by Normalized Departments / Course Streams:", options=unique_branches, default=unique_branches if unique_branches else [])
+                
+            # Render sliced snapshot view based on interactive dashboard conditions
+            if sel_cities or sel_branches:
+                query_view_df = final_consolidated_df.copy()
+                if sel_cities:
+                    query_view_df = query_view_df[query_view_df["city"].isin(sel_cities)]
+                if sel_branches:
+                    query_view_df = query_view_df[query_view_df["dept"].isin(sel_branches)]
+                    
+                st.markdown(f"Displaying **{len(query_view_df)} entries** inside filter grid view:")
+                st.dataframe(query_view_df, use_container_width=True)
+            else:
+                st.info("Select city or branch targets inside the lookup box fields above to populate matching entries instantly.")
+            
         else:
             st.error("❌ Pipeline finished executing, but zero rows successfully passed data schema filters across the full document context.")
+            
