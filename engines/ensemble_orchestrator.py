@@ -18,7 +18,7 @@ except ImportError:
     IBMDoclingConverter = None
 
 # ==============================================================================
-# 📋 STRUCTURED PYDANTIC SCHEMAS (EXTRACTED FROM YOUR JUPYTER WORKSPACE)
+# 📋 STRUCTURED PYDANTIC SCHEMAS (DUPLICATED FROM YOUR COLAB NOTEBOOK)
 # ==============================================================================
 class SeatMatrixRecord(BaseModel):
     """
@@ -26,7 +26,7 @@ class SeatMatrixRecord(BaseModel):
     """
     college_name: str = Field(
         ...,
-        description="The name of the institution or university (e.g., 'THE KISHKINDA UNIVERSITY')"
+        description="The name of the institution or university (e.g., 'THE KISHKINDA UNIVERSITY')."
     )
     city: Optional[str] = Field(
         None,
@@ -63,16 +63,16 @@ class SeatMatrixExtraction(BaseModel):
     )
 
 # ==============================================================================
-# 🚀 MULTI-LLM CASCADING FAILOVER ORCHESTRATOR
+# 🚀 CASCADING MULTI-PROVIDER MULTI-LLM RESILIENT PARSER
 # ==============================================================================
 class PragyanEnsembleParser:
     """
     Multi-Provider Multi-LLM Cascading Failover Routing Engine for PragyanAI.
-    Sequentially hops through your specified model pool the millisecond a 
-    rate-limit exhaustion exception (429 / Quota Exceeded) is caught.
+    Sequentially steps through a dynamic cluster of custom models and Groq endpoints
+    the millisecond a rate-limit exhaustion exception (429 / Quota) is caught.
     """
     def __init__(self):
-        # Master Sequence Failover Chain Pool
+        # 🎯 Master Orchestration Cascade Chain Pool Configuration
         self.cascade_pool = [
             {"provider": "groq", "name": "llama-3.1-8b-instant"},
             {"provider": "groq", "name": "llama-3.3-70b-versatile"},
@@ -81,7 +81,7 @@ class PragyanEnsembleParser:
             {"provider": "qwen", "name": "qwen/qwen3-32b"}
         ]
         
-        # System instructions mapped directly from your Colab workspace
+        # System instructions mapped directly from your Colab workspace design
         self.prompt_template = ChatPromptTemplate.from_messages([
             ("system", (
                 "You are an expert data extraction assistant. Your task is to extract structured tabular information "
@@ -96,6 +96,7 @@ class PragyanEnsembleParser:
         ])
 
     def _get_provider_client(self, model_meta: dict):
+        """Dynamic runtime adapter tracking and instantiation mapping."""
         provider = model_meta["provider"]
         model_name = model_meta["name"]
         
@@ -104,6 +105,7 @@ class PragyanEnsembleParser:
             return llm.with_structured_output(SeatMatrixExtraction)
             
         elif provider in ["openai-oss", "qwen"]:
+            # Pull localized open source endpoints securely from custom configurations or environments
             custom_base_url = os.getenv("OPEN_OSS_BASE_URL", "https://api.openai.com/v1")
             custom_api_key = os.getenv("OPEN_OSS_API_KEY", os.getenv("GROQ_API_KEY"))
             
@@ -116,32 +118,41 @@ class PragyanEnsembleParser:
             )
             return llm.with_structured_output(SeatMatrixExtraction)
         else:
-            raise ValueError(f"Unknown system interface provider context specified: {provider}")
+            raise ValueError(f"Unknown interface provider hook context specified: {provider}")
 
     def _invoke_cascade_broker(self, chunk: str) -> Optional[SeatMatrixExtraction]:
+        """Loops through models dynamically, hot-swapping endpoints upon hitting a 429 error."""
         formatted_messages = self.prompt_template.format_messages(text_chunk=chunk)
         
         for idx, model_meta in enumerate(self.cascade_pool):
             try:
+                # Instantiate structured provider adapter dynamically
                 structured_extractor = self._get_provider_client(model_meta)
                 result = structured_extractor.invoke(formatted_messages)
+                
                 if result and isinstance(result, SeatMatrixExtraction):
                     return result
+                    
             except Exception as e:
                 err_msg = str(e)
+                # Intercept rate limit, quota exhaustion, or overloaded hosting boundaries
                 if any(k in err_msg or k in err_msg.lower() for k in ["429", "rate_limit", "limit reached", "quota", "overloaded"]):
                     print(f"    [!] Quota Exhausted for [{model_meta['name']}]. Cascading down to pool index {idx + 1}...")
                     continue
                 else:
+                    print(f"    [!] Critical Exception hit on current model layer [{model_meta['name']}]: {err_msg}")
                     raise e
                     
-        print("    [⚠️] CRITICAL: Entire LLM failover cluster exhausted. Injecting emergency jitter sleep...")
+        # Emergency Safe Guard: If all models inside the cluster pool trigger 429s, apply short jitter backoff
+        print("    [⚠️] CRITICAL: Entire LLM failover cluster exhausted. Injecting 5s emergency jitter sleep...")
         time.sleep(5.0 + random.uniform(0.5, 1.5))
         
         emergency_extractor = self._get_provider_client({"provider": "groq", "name": "llama-3.3-70b-versatile"})
         return emergency_extractor.invoke(formatted_messages)
 
     def analyze_and_extract_matrix(self, file_bytes: bytes, intake_year: int) -> pd.DataFrame:
+        """Processes raw document bytes through text chunk loops utilizing the multi-LLM router canvas."""
+        # Open up isolated localized secure disk paths to pipe raw input streams securely
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
             temp_pdf.write(file_bytes)
             absolute_path = os.path.abspath(temp_pdf.name)
@@ -151,7 +162,7 @@ class PragyanEnsembleParser:
             if IBMDoclingConverter is not None:
                 markdown_text = IBMDoclingConverter().convert(absolute_path).document.export_to_markdown()
         except Exception as docling_err:
-            print(f"[Docling Error] Layout conversion failed: {str(docling_err)}")
+            print(f"[Docling Structural Parsing Error] Layout conversion failed: {str(docling_err)}")
         finally:
             if os.path.exists(absolute_path):
                 os.remove(absolute_path)
@@ -159,18 +170,20 @@ class PragyanEnsembleParser:
         if not markdown_text.strip():
             return pd.DataFrame()
 
-        # Chunk configuration matched to your notebook dimensions
+        # Fragment markdown tables safely matching Colab optimization metrics to respect token dimensions
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=4000, chunk_overlap=500, separators=["\n\n", "\n", " "])
         chunks = text_splitter.split_text(markdown_text)
         
         compiled_records = []
         for idx, chunk in enumerate(chunks):
+            # Performance Optimization Step: Skip headers or footers without tabular metrics
             if "COURSE NAME" not in chunk.upper() and "INTAKE" not in chunk.upper() and len(chunk.strip()) < 120:
                 continue
                 
             try:
                 extraction_result = self._invoke_cascade_broker(chunk)
                 if extraction_result and extraction_result.records:
+                    # Unpack structured data entities straight into row collectors
                     for record in extraction_result.records:
                         record_dict = record.model_dump()
                         record_dict['intake_year'] = int(intake_year)
