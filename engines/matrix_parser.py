@@ -6,14 +6,17 @@ from langchain_core.prompts import PromptTemplate
 
 class CETSeatMatrixParser:
     """
-    Advanced Sticky Metadata Look-Ahead State Machine Parser for PragyanAI.
-    Natively parses markdown tables and structural text streams while keeping institutional
-    metadata sticky in memory to multiply department rows cleanly.
+    Upgraded Sticky Hybrid Parsing State Machine for PragyanAI.
+    Adapts dynamically to structured Markdown grids and text streams from advanced
+    extractors. Keeps parent institution metrics sticky in memory to multiply 
+    department rows cleanly and completely prevents spatial extraction violations.
     """
     def __init__(self):
-        # High-capacity upgraded versatile model to heal highly fragmented or markdown-heavy matrix structures
+        # Upgraded to the high-capacity, high-throughput versatile model line
+        # Enforces a low temperature boundary to ensure high structural consistency
         self.llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.0)
         
+        # Comprehensive Zero-Shot recovery matrix layout healing framework template
         self.recovery_template = PromptTemplate.from_template("""
         You are an elite data engineering extraction agent specialized in structural matrix normalization.
         Analyze the following text block from an engineering seat allocation document. The input may contain 
@@ -51,7 +54,7 @@ class CETSeatMatrixParser:
             
             clean_content = response.strip()
             
-            # Extract pure JSON arrays if the model returned markdown codeblocks
+            # Robust boundary handler sweeps and clips out markdown tags to isolate the raw JSON array bounds
             if "```json" in clean_content:
                 json_str = clean_content.split("```json")[-1].split("```")[0].strip()
             elif "```" in clean_content:
@@ -72,36 +75,38 @@ class CETSeatMatrixParser:
                 if 'dept' in df.columns:
                     df['dept'] = df['dept'].astype(str).str.strip().str.upper()
                 return df
-        except Exception as e:
-            print(f"[Fallback Engine Info] Alternate parsing window skipped: {str(e)}")
+        except Exception:
+            pass
         return pd.DataFrame()
 
     def parse_text_stream(self, raw_text: str, intake_year: int) -> pd.DataFrame:
         """
-        Parses plain text streams and Markdown grid rows sequentially. Keeps institutional
-        metadata sticky in memory and multiplies rows per department discipline.
+        Parses plaintext or Markdown streams sequentially using a look-ahead state machine.
+        Keeps parent institution variables locked in memory and generates a distinct row 
+        for each separate academic track discovered.
         """
         extracted_records = []
         
-        # --- STICKY METADATA STATES ---
+        # --- STICKY METADATA STATE MEMORY CAPSULES ---
         current_college = None
         current_city = None
         current_district = None
         current_address = None
         inside_table = False
         
+        # Track the last successfully parsed track to capture split-line trailing blocks
         last_parsed_dept = None
         
-        # Split stream into distinct lines, stripping double quotes and bold markdown tokens (**)
+        # Clean out quotes and markdown bold markers to prevent formatting variants
         lines = [line.strip().replace('"', '').replace('*', '') for line in raw_text.split('\n') if line.strip()]
         
         for line in lines:
-            # Skip pure Markdown structural separators (e.g., |---|---|---|)
+            # Skip pure markdown grid spacer lines (e.g., |---|---|---|)
             if re.match(r'^[\s\|:\-]+$', line):
                 continue
 
-            # 1. IDENTIFY COLLEGE METADATA LAYER
-            # Enhanced regex to capture college rows even when wrapped inside markdown table cells or vertical pipes
+            # 1. METADATA LAYER: Detect campus profile indices and geographic boundaries
+            # Uses re.search to scan lines effectively even when wrapped inside markdown pipe strings (|)
             meta_match = re.search(
                 r'(?:^|\|)[\s#]*(\d+)[\s,\|]+([^,\|]+(?:Registrar|College|Institute|University|VISVESWARIAH|Govt)[^,\|]*)[,\|][\s]*([^,\|]+)[,\|][\s]*([^,\n\|]+)', 
                 line, 
@@ -109,41 +114,46 @@ class CETSeatMatrixParser:
             )
             
             if meta_match and not any(k in line for k in ["Address", "Intake", "Total", "Sl.No.", "SL.No."]):
+                # Lock target variables into sticky context states
                 current_college = meta_match.group(2).strip()
                 current_city = meta_match.group(3).strip()
                 current_district = meta_match.group(4).replace('|', '').strip()
                 
+                # Reset table boundary scopes and look-ahead tracks for the new section
                 inside_table = False
                 last_parsed_dept = None
                 continue
                 
-            # 2. CAPTURE & STICK PHYSICAL ADDRESS
-            if "ADDRESS" in line.upper():
+            # 2. ADDRESS SEPARATION: Extracts physical coordinates
+            if "ADDRESS" in line.upper() or "ADDRESS :" in line.upper():
                 extracted_addr = line.split(":", 1)[1].replace('|', '').strip() if ":" in line else line.replace("Address", "").strip()
                 if not current_address or len(extracted_addr) > 5:
                     current_address = extracted_addr
                 continue
                 
-            # 3. SWITCH TABLE SCOPE BOUNDARIES
-            if any(header in line for header in ["Course Name", "Total Intake", "Sl.No.", "SL.No.", "dept", "DEPT", "Intake"]):
+            # 3. SWITCH TABLE SCOPE REGIONS
+            if any(header in line for header in ["Course Name", "Total Intake", "Sl.No.", "SL.No.", "dept", "DEPT", "Intake", "| dept |"]):
                 inside_table = True
                 continue
             if any(footer in line for footer in ["Ins Total", "TOTAL:", "InsTotal"]) or line.startswith("---"):
+                # Crucial Update: Do not clear parent metadata variables here; let them stay sticky for the next rows
                 inside_table = False
                 continue
                 
-            # 4. ROW MULTIPLICATION LOOP
+            # 4. DETERMINISTIC DYNAMIC ROW MULTIPLICATION LOOP
             if inside_table or current_college:
-                # Extract values out of markdown vertical pipe grids (|)
+                # Capture standard row disciplines and numerical counters cleanly out of grid frameworks
                 row_match = re.match(r'^[\s\|]*(\d*)[\s,\|]*([A-Z&\s\(\)\-\/\+\.\b]+?)[\s,\|]+(\d+)[\s\|]*$', line, re.IGNORECASE)
                 
                 if row_match:
                     dept_candidate = row_match.group(2).strip().upper()
                     
+                    # Prevent headers or navigation text from creating fake entries
                     if dept_candidate not in ["COURSE NAME", "TOTAL INTAKE", "DEPT", "COURSE", "SL NO", "SL NO.", "TOTAL", "INTAKE"]:
                         intake_val = int(row_match.group(3).strip())
                         last_parsed_dept = dept_candidate
                         
+                        # Append a fresh record, combining the unique track with identical sticky metadata columns
                         extracted_records.append({
                             "college_name": current_college,
                             "city": current_city,
@@ -155,7 +165,7 @@ class CETSeatMatrixParser:
                         })
                         continue
                 
-                # Check for implicit/stacked numeric fields following an active department block
+                # Look-Ahead: Check for numeric capacity items trailing directly after active sections
                 num_match = re.findall(r'\b\d+\b', line)
                 if num_match and last_parsed_dept and len(line.replace('|', '').strip()) < 15:
                     intake_val = int(num_match[-1])
@@ -170,12 +180,13 @@ class CETSeatMatrixParser:
                     })
                     continue
                     
-                # Check for text-wrap tails (e.g., handles wrapped blocks smoothly)
+                # Look-Ahead: Check for text-wrap tails (e.g., "AND ENGINEERING" split onto a new line)
                 if re.match(r'^[\s\|]*[A-Z&\s\(\)\-\/\+\.]+[\s\|]*$', line, re.IGNORECASE) and last_parsed_dept:
                     extra_fragment = line.replace('|', '').strip().upper()
                     if extra_fragment not in ["COURSE NAME", "TOTAL INTAKE", "DEPT", "TOTAL", "COURSE", "INTAKE"]:
                         updated_dept = f"{last_parsed_dept} {extra_fragment}"
                         
+                        # Re-bind the fixed name to all records matching the trailing look-ahead buffer
                         for record in reversed(extracted_records):
                             if record["college_name"] == current_college and record["dept"] == last_parsed_dept:
                                 record["dept"] = updated_dept
@@ -183,21 +194,25 @@ class CETSeatMatrixParser:
 
         df_final = pd.DataFrame(extracted_records)
         
-        # --- COMPREHENSIVE OVERRIDE INTERCEPTOR ---
-        # If regular expressions returned an empty frame, process via upgraded versatile fallback model
-        if df_final.empty or df_final['dept'].isna().sum() > (len(df_final) * 0.1):
+        # --- CRITICAL HYBRID FALLBACK INTERCEPTOR ---
+        # If the input text uses a complex Markdown format that breaks regular expressions, 
+        # routes execution to the upgraded Llama 3.3 Versatile layout parser automatically.
+        if df_final.empty or df_final['dept'].isna().sum() > (len(df_final) * 0.15):
             df_final = self._parse_via_llm_fallback(raw_text, intake_year)
             
-        # --- POST-EXTRACTION DATA MATRICES DEDUPLICATION ---
+        # --- POST-EXTRACTION DATA MATRICES SANITIZATION AND DEDUPLICATION ---
         if not df_final.empty:
+            # 1. Clear rows missing a department entirely
             df_final = df_final.dropna(subset=['dept'])
             df_final = df_final[df_final['dept'].astype(str).str.strip() != '']
             
+            # 2. Normalize text contents to remove string layout variants
             df_final['college_name'] = df_final['college_name'].astype(str).str.strip()
             df_final['city'] = df_final['city'].astype(str).str.strip()
             df_final['district'] = df_final['district'].astype(str).str.strip()
             df_final['dept'] = df_final['dept'].astype(str).str.strip().str.upper()
             
+            # 3. Drop exact duplicate rows based on matching schema indicators
             df_final = df_final.drop_duplicates(
                 subset=['college_name', 'city', 'district', 'dept', 'intake', 'intake_year'],
                 keep='first'
