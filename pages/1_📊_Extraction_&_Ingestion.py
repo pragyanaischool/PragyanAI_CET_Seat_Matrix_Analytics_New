@@ -4,16 +4,43 @@ from engines.document_extractor import PragyanDocumentExtractor
 from engines.matrix_parser import CETSeatMatrixParser
 from database.db_handler import save_matrix_records
 
+import streamlit as st
+import os
+import sys
+
+# ==============================================================================
+# 🎯 DYNAMIC PATH ANCHOR & SYSTEM CACHE PROTECTION
+# ==============================================================================
+# 1. Deduce absolute root directory footprint paths
+root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+# 2. Inject parent root framework path into global execution lookup directories
+if root_path not in sys.path:
+    sys.path.insert(0, root_path)
+
+# 3. CRITICAL: Clear partial or corrupted sys.modules tracking caches 
+# to explicitly prevent internal sub-page KeyErrors during hot-reloads
+for module_key in list(sys.modules.keys()):
+    if module_key.startswith("engines") or module_key.startswith("database"):
+        sys.modules.pop(module_key, None)
+# ==============================================================================
+
+# Now safe to proceed with absolute package references
+import pandas as pd
+from engines.document_extractor import PragyanDocumentExtractor
+from engines.matrix_parser import CETSeatMatrixParser
+from database.db_handler import save_matrix_records
+
 def render_ingestion_portal():
-    """
-    Renders the multi-format, year-aware data ingestion, layout healing,
-    and automated deduplication metrics panel.
-    """
     st.set_page_config(
         page_title="PragyanAI Ingestion Portal",
         page_icon="📊",
         layout="wide"
     )
+
+    st.title("📊 Enterprise Ingestion & Sanitization Engine")
+    st.subheader("Process seat matrix documentation while automatically isolating rows and removing unmapped layout noise.")
+    st.markdown("---")
 
     # 1. Page Header Branding UI Block
     st.title("📊 Enterprise Ingestion & Sanitization Engine")
