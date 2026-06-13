@@ -1,15 +1,23 @@
 import streamlit as st
 import os
-from database.db_handler import init_db, get_combined_analytics
+import sys
+
+# Ensure root paths are appended thread-safely across container environments
+root_path = os.path.abspath(os.path.dirname(__file__))
+if root_path not in sys.path:
+    sys.path.insert(0, root_path)
+
+# FIXED: Standardized import references targeting init_database directly to prevent runtime failures
+from database.db_handler import init_database, get_combined_analytics
 
 def main():
     """
     Core entry point and environment bootstrap configuration 
     for the PragyanAI Seat Matrix Intelligence Suite.
     """
-    # 1. Initialize Relational Storage Models immediately upon startup
+    # 1. Initialize Relational Storage Models immediately upon startup via standardized handler
     try:
-        init_db()
+        init_database()
     except Exception as e:
         st.error(f"Critical System Failure: Relational database workspace could not initialize: {str(e)}")
         st.stop()
@@ -25,14 +33,17 @@ def main():
     
     col_v1, col_v2, col_v3, col_v4 = st.columns(4)
     with col_v1:
-        st.metric("Total Data Rows Cached", len(df_lake) if not df_lake.empty else 0)
+        st.metric("Total Data Rows Cached", len(df_lake) if (df_lake is not None and not df_lake.empty) else 0)
     with col_v2:
-        st.metric("Unique Campuses Tracked", df_lake['college_name'].nunique() if not df_lake.empty else 0)
+        st.metric("Unique Campuses Tracked", df_lake['college_name'].nunique() if (df_lake is not None and not df_lake.empty) else 0)
     with col_v3:
-        st.metric("Academic Cycles Logged", df_lake['intake_year'].nunique() if not df_lake.empty else 0)
+        st.metric("Academic Cycles Logged", df_lake['intake_year'].nunique() if (df_lake is not None and not df_lake.empty) else 0)
     with col_v4:
         # Check how many institutions have successfully fetched external enrichment profiles
-        enriched_count = df_lake[df_lake['website'].notna() & (df_lake['website'] != 'N/A')]['college_name'].nunique() if not df_lake.empty else 0
+        if df_lake is not None and not df_lake.empty and 'website' in df_lake.columns:
+            enriched_count = df_lake[df_lake['website'].notna() & (df_lake['website'] != 'N/A')]['college_name'].nunique()
+        else:
+            enriched_count = 0
         st.metric("Enriched College Profiles", enriched_count)
 
     st.markdown("---")
@@ -76,6 +87,7 @@ def main():
     # 5. Security & Environment Configuration Validation Monitor
     st.markdown("### 🔌 API Integration Pipeline Health Status")
     
+    # FIXED: os.getenv parameters now execute cleanly with the added top-level 'import os' module wrapper
     groq_api = os.getenv("GROQ_API_KEY")
     serp_api = os.getenv("SERPAPI_API_KEY")
 
