@@ -7,11 +7,11 @@ from langchain_core.prompts import PromptTemplate
 class CETSeatMatrixParser:
     """
     Advanced Sticky Metadata Look-Ahead State Machine Parser for PragyanAI.
-    Ensures each department discipline under a college gets its own unique, individual row 
-    while preserving sticky institutional columns perfectly. Automatically resolves text lumping.
+    Natively handles complex Markdown tables and horizontal text-wraps. 
+    Locks college details in memory to cleanly generate a separate row per course discipline.
     """
     def __init__(self):
-        # High-throughput versatile model to handle complex formatting recovery
+        # Upgraded to high-throughput versatile model to resolve complex layout deformations
         self.llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.0)
         
         self.recovery_template = PromptTemplate.from_template("""
@@ -101,18 +101,13 @@ class CETSeatMatrixParser:
         
         # Clean out quotes and markdown bold markers to prevent formatting variants
         lines = [line.strip().replace('"', '').replace('*', '') for line in raw_text.split('\n') if line.strip()]
-        
-        # Helper set to explode lumped departments if regex merges lines
-        core_branch_keywords = [
-            "COMPUTER SCIENCE", "ELECTRICAL", "ELECTRONICS", "MECHANICAL", 
-            "CIVIL", "INFORMATION SCIENCE", "BIO-TECHNOLOGY", "ARTIFICIAL INTELLIGENCE"
-        ]
 
         for line in lines:
             if re.match(r'^[\s\|:\-]+$', line):
                 continue
 
             # 1. METADATA LAYER: Detect campus profile indices and geographic boundaries
+            # Upgraded from re.match to re.search to capture headers wrapped inside table columns
             meta_match = re.search(
                 r'(?:^|\|)[\s#]*(\d+)[\s,\|]+([^,\|]+(?:Registrar|College|Institute|University|VISVESWARIAH|Govt|Management)[^,\|]*)[,\|][\s]*([^,\|]+)[,\|][\s]*([^,\n\|]+)', 
                 line, 
@@ -145,6 +140,7 @@ class CETSeatMatrixParser:
                 
             # 4. DETERMINISTIC DYNAMIC ROW MULTIPLICATION LOOP
             if inside_table or current_college:
+                # Optimized regex safely pulls text components out from markdown table pipes
                 row_match = re.match(r'^[\s\|]*(\d*)[\s,\|]*([A-Z&\s\(\)\-\/\+\.\b]+?)[\s,\|]+(\d+)[\s\|]*$', line, re.IGNORECASE)
                 
                 if row_match:
@@ -209,8 +205,7 @@ class CETSeatMatrixParser:
                     is_signature_violated = True
                     break
 
-        # If regular expressions failed or a lumped layout violation is detected,
-        # fallback to Llama-3.3-70b-versatile to multiply the row states cleanly.
+        # Fallback to the llama-3.3-70b-versatile architecture if a lumped layout violation is detected
         if df_final.empty or is_signature_violated or df_final['dept'].isna().sum() > (len(df_final) * 0.1):
             df_final = self._parse_via_llm_fallback(raw_text, intake_year)
             
