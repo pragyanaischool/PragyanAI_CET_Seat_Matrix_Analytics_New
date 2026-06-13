@@ -7,13 +7,11 @@ from langchain_core.prompts import PromptTemplate
 class CETSeatMatrixParser:
     """
     Upgraded Sticky Hybrid Parsing State Machine for PragyanAI.
-    Adapts dynamically to structured Markdown grids and text streams from advanced
-    extractors. Keeps parent institution metrics sticky in memory to multiply 
-    department rows cleanly and completely prevents spatial extraction violations.
+    Detects spatial signature violations (like lumped department strings or pincode intakes)
+    and routes them to llama-3.3-70b-versatile to split data into clean individual rows.
     """
     def __init__(self):
-        # Upgraded to the high-capacity, high-throughput versatile model line
-        # Enforces a low temperature boundary to ensure high structural consistency
+        # High-capacity versatile model to handle complex layout parsing and formatting recovery
         self.llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.0)
         
         # Comprehensive Zero-Shot recovery matrix layout healing framework template
@@ -106,7 +104,6 @@ class CETSeatMatrixParser:
                 continue
 
             # 1. METADATA LAYER: Detect campus profile indices and geographic boundaries
-            # Uses re.search to scan lines effectively even when wrapped inside markdown pipe strings (|)
             meta_match = re.search(
                 r'(?:^|\|)[\s#]*(\d+)[\s,\|]+([^,\|]+(?:Registrar|College|Institute|University|VISVESWARIAH|Govt)[^,\|]*)[,\|][\s]*([^,\|]+)[,\|][\s]*([^,\n\|]+)', 
                 line, 
@@ -136,24 +133,20 @@ class CETSeatMatrixParser:
                 inside_table = True
                 continue
             if any(footer in line for footer in ["Ins Total", "TOTAL:", "InsTotal"]) or line.startswith("---"):
-                # Crucial Update: Do not clear parent metadata variables here; let them stay sticky for the next rows
                 inside_table = False
                 continue
                 
             # 4. DETERMINISTIC DYNAMIC ROW MULTIPLICATION LOOP
             if inside_table or current_college:
-                # Capture standard row disciplines and numerical counters cleanly out of grid frameworks
                 row_match = re.match(r'^[\s\|]*(\d*)[\s,\|]*([A-Z&\s\(\)\-\/\+\.\b]+?)[\s,\|]+(\d+)[\s\|]*$', line, re.IGNORECASE)
                 
                 if row_match:
                     dept_candidate = row_match.group(2).strip().upper()
                     
-                    # Prevent headers or navigation text from creating fake entries
                     if dept_candidate not in ["COURSE NAME", "TOTAL INTAKE", "DEPT", "COURSE", "SL NO", "SL NO.", "TOTAL", "INTAKE"]:
                         intake_val = int(row_match.group(3).strip())
                         last_parsed_dept = dept_candidate
                         
-                        # Append a fresh record, combining the unique track with identical sticky metadata columns
                         extracted_records.append({
                             "college_name": current_college,
                             "city": current_city,
@@ -186,7 +179,6 @@ class CETSeatMatrixParser:
                     if extra_fragment not in ["COURSE NAME", "TOTAL INTAKE", "DEPT", "TOTAL", "COURSE", "INTAKE"]:
                         updated_dept = f"{last_parsed_dept} {extra_fragment}"
                         
-                        # Re-bind the fixed name to all records matching the trailing look-ahead buffer
                         for record in reversed(extracted_records):
                             if record["college_name"] == current_college and record["dept"] == last_parsed_dept:
                                 record["dept"] = updated_dept
@@ -194,25 +186,37 @@ class CETSeatMatrixParser:
 
         df_final = pd.DataFrame(extracted_records)
         
-        # --- CRITICAL HYBRID FALLBACK INTERCEPTOR ---
-        # If the input text uses a complex Markdown format that breaks regular expressions, 
-        # routes execution to the upgraded Llama 3.3 Versatile layout parser automatically.
-        if df_final.empty or df_final['dept'].isna().sum() > (len(df_final) * 0.15):
+        # --- CRITICAL SPATIAL EXTRACTION SIGNATURE VIOLATION INTERCEPTOR ---
+        # Scans the dataframe to see if multiple separate records were lumped together into single cells
+        is_signature_violated = False
+        if not df_final.empty:
+            for dept_str in df_final['dept'].astype(str):
+                # If a department string contains multiple independent fields/disciplines or keywords
+                if len(dept_str) > 75 or dept_str.count("ENGINEERING") > 1 or "SEATS" in dept_str:
+                    is_signature_violated = True
+                    break
+            for intake_val in df_final['intake']:
+                # If intake numbers look like an architectural pincode or zip layout field
+                if intake_val > 1000:
+                    is_signature_violated = True
+                    break
+
+        # If regular expressions returned an empty frame or failed to slice clean rows,
+        # route execution to the upgraded versatile fallback model to extract separate records cleanly.
+        if df_final.empty or is_signature_violated or df_final['dept'].isna().sum() > (len(df_final) * 0.11):
             df_final = self._parse_via_llm_fallback(raw_text, intake_year)
             
         # --- POST-EXTRACTION DATA MATRICES SANITIZATION AND DEDUPLICATION ---
         if not df_final.empty:
-            # 1. Clear rows missing a department entirely
             df_final = df_final.dropna(subset=['dept'])
             df_final = df_final[df_final['dept'].astype(str).str.strip() != '']
             
-            # 2. Normalize text contents to remove string layout variants
             df_final['college_name'] = df_final['college_name'].astype(str).str.strip()
             df_final['city'] = df_final['city'].astype(str).str.strip()
             df_final['district'] = df_final['district'].astype(str).str.strip()
-            df_final['dept'] = df_final['dept'].astype(str).str.strip().str.upper()
+            if 'dept' in df_final.columns:
+                df_final['dept'] = df_final['dept'].astype(str).str.strip().str.upper()
             
-            # 3. Drop exact duplicate rows based on matching schema indicators
             df_final = df_final.drop_duplicates(
                 subset=['college_name', 'city', 'district', 'dept', 'intake', 'intake_year'],
                 keep='first'
