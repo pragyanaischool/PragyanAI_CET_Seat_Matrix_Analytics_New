@@ -8,7 +8,7 @@ openpyxl
 # Document Binary Parsers & Extractors
 pypdf
 python-docx
-
+wikipedia
 # GenAI Orchestration & LLM Frameworks
 langchain
 langchain-core
