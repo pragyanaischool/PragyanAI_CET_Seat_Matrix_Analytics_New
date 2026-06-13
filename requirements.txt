@@ -29,7 +29,9 @@ huggingface-hub
 torch
 duckduckgo-search
 pdfplumber
-
+pydantic
+beautifulsoup4
+requests
 # --- ADVANCED ENSEMBLE AI PARSING ENGINES ---
 #marker-pdf
 docling
