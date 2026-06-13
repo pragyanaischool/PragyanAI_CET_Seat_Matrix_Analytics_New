@@ -12,8 +12,8 @@ from langchain_groq import ChatGroq
 class CollegeEnrichmentEngine:
     """
     Enhanced Fault-Tolerant Federated Knowledge Discovery Engine for PragyanAI.
-    Concurrently queries multi-engine web search streams, employs a Cascading Multi-LLM 
-    Failover routing pool for semantic consolidation, and enforces strict relational alignment keys.
+    Concurrently queries multi-engine web search streams, employs an Adaptive Exponential Jitter Backoff
+    Multi-LLM Failover routing pool for semantic consolidation, and enforces strict relational alignment keys.
     """
     def __init__(self):
         # Initialize open-web tool wrappers safely inside exception boundaries
@@ -35,34 +35,15 @@ class CollegeEnrichmentEngine:
         # 🎯 Master Extraction Model Cluster Sequence Cascade Pool
         self.enrichment_model_pool = [
             {"provider": "groq", "name": "llama-3.3-70b-versatile"},
-            {"provider": "openai-oss", "name": "openai/gpt-oss-120b"},
-            {"provider": "qwen", "name": "qwen/qwen3-32b"},
-            {"provider": "openai-oss", "name": "openai/gpt-oss-20b"},
-            {"provider": "groq", "name": "llama-3.1-8b-instant"}
+            {"provider": "groq", "name": "llama-3.1-8b-instant"},
+            {"provider": "groq", "name": "llama3-70b-8192"},
+            {"provider": "groq", "name": "llama3-8b-8192"}
         ]
 
     def _get_provider_client(self, model_meta: dict):
         """Dynamic runtime adapter tracking and instantiation mapping for multi-provider profiles."""
-        provider = model_meta["provider"]
         model_name = model_meta["name"]
-        
-        if provider == "groq":
-            return ChatGroq(model_name=model_name, temperature=0.0, max_tokens=2048)
-            
-        elif provider in ["openai-oss", "qwen"]:
-            # Pull localized custom endpoint configurations securely from system server environments
-            custom_base_url = os.getenv("OPEN_OSS_BASE_URL", "https://api.openai.com/v1")
-            custom_api_key = os.getenv("OPEN_OSS_API_KEY", os.getenv("GROQ_API_KEY"))
-            
-            return ChatOpenAI(
-                model_name=model_name,
-                temperature=0.0,
-                max_tokens=2048,
-                openai_api_base=custom_base_url,
-                openai_api_key=custom_api_key
-            )
-        else:
-            raise ValueError(f"Unknown interface provider hook context specified: {provider}")
+        return ChatGroq(model_name=model_name, temperature=0.0, max_tokens=2048)
 
     def _query_google_stream(self, query: str) -> str:
         if not self.serp_search:
@@ -90,27 +71,41 @@ class CollegeEnrichmentEngine:
 
     def _invoke_semantic_cascade(self, prompt: str) -> str:
         """
-        Loops through the custom model pool and shifts endpoints dynamically 
-        the moment a rate limit (429) or quota threshold is breached.
+        Loops through the custom model pool and shifts endpoints dynamically.
+        Implements an adaptive exponential backoff with random jitter when encountering 
+        rate limits (429) or token window restrictions to prevent extraction failures.
         """
+        base_delay = 2.0  # Initial sleep delay in seconds
+        max_retries = 5
+        
         for idx, model_meta in enumerate(self.enrichment_model_pool):
-            try:
-                llm_instance = self._get_provider_client(model_meta)
-                response = llm_instance.invoke(prompt).content
-                return response.strip()
-            except Exception as e:
-                err_msg = str(e)
-                # Intercept rate limit, quota exhaustion, or overloaded hosting boundaries
-                if any(k in err_msg or k in err_msg.lower() for k in ["429", "rate_limit", "limit reached", "quota", "overloaded"]):
-                    print(f"    [!] Enrichment Quota Exhausted for [{model_meta['name']}]. Cascading to fallback tier {idx + 1}...")
-                    continue
-                else:
-                    print(f"    [!] Critical Model Exception hit on enrichment layer: {err_msg}")
-                    raise e
+            retries = 0
+            while retries < max_retries:
+                try:
+                    llm_instance = self._get_provider_client(model_meta)
+                    response = llm_instance.invoke(prompt).content
+                    return response.strip()
+                except Exception as e:
+                    err_msg = str(e)
+                    
+                    # Catch Rate Limits (429), Token Limits, or congested server thresholds
+                    if any(k in err_msg or k in err_msg.lower() for k in ["429", "rate_limit", "limit reached", "quota", "overloaded"]):
+                        retries += 1
+                        # Apply exponential backoff with a randomized multiplier (jitter) to prevent lock synchronization
+                        sleep_duration = (base_delay ** retries) + random.uniform(0.5, 1.5)
+                        print(f"    [!] Rate Limit hit for [{model_meta['name']}]. Retry {retries}/{max_retries}. Sleeping for {sleep_duration:.2f}s...")
+                        time.sleep(sleep_duration)
+                        continue
+                    else:
+                        print(f"    [!] Critical Model Exception hit on enrichment layer: {err_msg}")
+                        raise e
+            
+            # If a single model fails completely after all retries, cascade directly to the next model layout
+            print(f"    [!] Exhausted all retries for model [{model_meta['name']}]. Cascading to fallback tier...")
 
-        # Emergency Safe Guard: Apply randomized jitter sleep if the cluster pool is completely congested
+        # Emergency Safe Guard: Apply randomized fallback sleep if the entire cluster pool is congested
         print("    [⚠️] CRITICAL: Entire enrichment cluster congested. Injecting emergency jitter sleep...")
-        time.sleep(5.0 + random.uniform(0.5, 1.5))
+        time.sleep(8.0 + random.uniform(1.0, 3.0))
         
         emergency_llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.0)
         return emergency_llm.invoke(prompt).content.strip()
@@ -119,13 +114,6 @@ class CollegeEnrichmentEngine:
         """
         Orchestrates parallel multi-threaded federated web searches.
         Guarantees structured relational key returns even during total network failure.
-        
-        Parameters:
-            college_name (str): The parsed baseline institute text key.
-            city (str): The isolated local urban node.
-            
-        Returns:
-            dict: Standardized institutional parameters bound exactly to the query keys.
         """
         # Enforce strict text casing boundaries to eliminate key-mismatch risks
         target_college_clean = str(college_name).strip().upper()
@@ -135,7 +123,6 @@ class CollegeEnrichmentEngine:
         context_accumulator = []
 
         # --- PHASE 1: ASYNCHRONOUS THREADED BROKERS ---
-        # Executes search wrappers across parallel background threads to skip I/O bottlenecks
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                 future_google = executor.submit(self._query_google_stream, search_query)
@@ -205,7 +192,6 @@ class CollegeEnrichmentEngine:
                     extracted_data[field] = "N/A"
 
         except Exception as e:
-            # Secure default fallback instantiation if formatting boundaries or APIs drop
             print(f"[Enrichment Framework Recovered] Network/Format drop handled: {str(e)}")
             extracted_data = {
                 "website": "N/A",
@@ -216,7 +202,6 @@ class CollegeEnrichmentEngine:
             }
 
         # 🎯 THE ANTI-COLLAPSE LOCK:
-        # Re-bind the exact clean input keys to guarantee a perfect relational pd.merge join match
         extracted_data["college_name"] = target_college_clean
         extracted_data["city"] = target_city_clean
         
