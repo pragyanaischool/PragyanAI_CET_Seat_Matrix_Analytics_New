@@ -1,5 +1,6 @@
 import io
 import os
+import tempfile
 import pandas as pd
 from docx import Document
 
@@ -10,17 +11,6 @@ except ImportError:
     IBMDoclingConverter = None
 
 try:
-    from marker.convert import convert_single_pdf as MarkerPDFConverter
-    from marker.models import load_all_models as load_marker_models
-except ImportError:
-    MarkerPDFConverter = None
-
-try:
-    from unstructured.partition.pdf import partition_pdf as UnstructuredPDFPartitioner
-except ImportError:
-    UnstructuredPDFPartitioner = None
-
-try:
     import pdfplumber
 except ImportError:
     pdfplumber = None
@@ -29,21 +19,21 @@ except ImportError:
 class PragyanDocumentExtractor:
     """
     Enterprise ensemble data extraction and normalization engine for PragyanAI.
-    Concurrently leverages IBM's Docling, Marker, and Unstructured to transform
-    highly unpredictable administrative PDFs into structured, layout-healed markdown text streams.
+    Leverages IBM's Docling to transform highly unpredictable administrative PDFs 
+    into structured, layout-healed markdown tables, with a resilient pdfplumber fallback.
     """
     
     @staticmethod
     def extract_to_text_stream(file_bytes: bytes, file_name: str) -> str:
         """
-        Routes incoming binaries to specific data parsing handlers based on file type.
+        Routes incoming binary blocks to specific data parsing handlers based on file type.
         
         Parameters:
-            file_bytes (bytes): Raw binary payload of the uploaded document file.
-            file_name (str): Original string file name containing the explicit extension suffix.
+            file_bytes (bytes): The raw binary content of the uploaded matrix file.
+            file_name (str): The original filename used to resolve format extensions.
             
         Returns:
-            str: Normalized plain-text/markdown string data stream.
+            str: Clean, layout-preserved text or markdown matrix stream.
         """
         if not file_name or "." not in file_name:
             raise ValueError("Invalid document reference: Missing explicit format extension suffix.")
@@ -51,7 +41,7 @@ class PragyanDocumentExtractor:
         ext = file_name.split(".")[-1].lower()
         
         if ext == "pdf":
-            return PragyanDocumentExtractor._extract_pdf_ensemble(file_bytes)
+            return PragyanDocumentExtractor._extract_pdf_pipeline(file_bytes)
         elif ext in ["xlsx", "xls"]:
             return PragyanDocumentExtractor._extract_spreadsheet(file_bytes)
         elif ext == "csv":
@@ -62,94 +52,63 @@ class PragyanDocumentExtractor:
             raise ValueError(f"Ingestion Core Aborted: Unsupported file format specification: .{ext}")
 
     @staticmethod
-    def _extract_pdf_ensemble(file_bytes: bytes) -> str:
+    def _extract_pdf_pipeline(file_bytes: bytes) -> str:
         """
-        Executes a prioritized fallback parsing pipeline to reconstruct text alignments
-        without dropping columns, text lines, or clipping table dimensions.
+        Executes Docling for superior table structure and grid markdown extraction.
+        Uses a secure absolute path temporary file block to eliminate cross-thread path loss.
         """
-        extracted_results = {}
-        temp_pdf_name = "temp_operational_ingestion.pdf"
-        
-        # Write bytes cleanly to disk temporarily to accommodate file-path-bound ML libraries
-        with open(temp_pdf_name, "wb") as f:
-            f.write(file_bytes)
-            
+        # Lock down a unique temporary footprint path on disk
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
+            temp_pdf.write(file_bytes)
+            absolute_temp_path = os.path.abspath(temp_pdf.name)
+
         try:
-            # --- STRATEGY 1: IBM DOCLING (Enterprise layout object-detection) ---
+            # --- STRATEGY A: IBM DOCLING (Premium Grid & Markdown Engine) ---
             if IBMDoclingConverter is not None:
                 try:
                     converter = IBMDoclingConverter()
-                    docling_doc = converter.convert_to_markdown(temp_pdf_name)
-                    extracted_results["docling"] = docling_doc.markdown
+                    docling_doc = converter.convert(absolute_temp_path)
+                    markdown_output = docling_doc.document.export_to_markdown()
+                    
+                    if markdown_output and markdown_output.strip():
+                        return markdown_output
                 except Exception as e:
-                    print(f"[Ensemble Alert] IBM Docling parsing phase bypassed: {str(e)}")
+                    print(f"[Extractor Alert] IBM Docling parsing phase bypassed, cascading to fallback: {str(e)}")
 
-            # --- STRATEGY 2: MARKER PDF (Optimized for text, grids, and formulas) ---
-            if MarkerPDFConverter is not None:
-                try:
-                    model_lst, metadata_ctx = load_marker_models()
-                    marker_text, _, _ = MarkerPDFConverter(temp_pdf_name, model_lst, metadata_ctx)
-                    extracted_results["marker"] = marker_text
-                except Exception as e:
-                    print(f"[Ensemble Alert] Marker layout transformation phase bypassed: {str(e)}")
-
-            # --- STRATEGY 3: UNSTRUCTURED (Vision-augmented chunking engine) ---
-            if UnstructuredPDFPartitioner is not None:
-                try:
-                    elements = UnstructuredPDFPartitioner(
-                        filename=temp_pdf_name,
-                        strategy="hi_res",  # Triggers deeper vision model inference
-                        infer_table_structure=True
-                    )
-                    unstructured_text = "\n".join([str(el) for el in elements])
-                    extracted_results["unstructured"] = unstructured_text
-                except Exception as e:
-                    print(f"[Ensemble Alert] Unstructured pipeline chunking phase bypassed: {str(e)}")
-
-            # --- STRATEGY 4: SPATIAL LOCAL ENFORCER (pdfplumber backup) ---
-            # Activates if all high-level ML dependencies fail to initiate or process
-            if not extracted_results:
-                if pdfplumber is not None:
-                    print("[Ensemble Warning] Deep learning architectures bypassed. Running pdfplumber layout fallback...")
-                    text_accum = []
-                    with pdfplumber.open(temp_pdf_name) as pdf:
-                        for idx, page in enumerate(pdf.pages):
-                            page_text = page.extract_text(layout=True)
-                            if page_text:
-                                text_accum.append(f"\n--- PAGE {idx + 1} ---\n{page_text}")
-                    return "\n".join(text_accum)
-                else:
-                    raise RuntimeError("Critical System Fault: No active document parser extensions found inside local runtime environment.")
-
-            # --- PIPELINE CONSOLIDATION & RECONCILIATION SELECTION ---
-            # Prioritize clean Markdown frameworks to ensure the Downstream state machine is reliable
-            if "docling" in extracted_results and extracted_results["docling"].strip():
-                return extracted_results["docling"]
-            elif "marker" in extracted_results and extracted_results["marker"].strip():
-                return extracted_results["marker"]
+            # --- STRATEGY B: SPATIAL LOCAL ENFORCER (pdfplumber layout backup) ---
+            if pdfplumber is not None:
+                print("[Extractor Warning] Running pdfplumber layout fallback...")
+                text_accum = []
+                with pdfplumber.open(absolute_temp_path) as pdf:
+                    for idx, page in enumerate(pdf.pages):
+                        page_text = page.extract_text(layout=True)
+                        if page_text:
+                            text_accum.append(f"\n--- PAGE {idx + 1} ---\n{page_text}")
+                return "\n".join(text_accum)
             else:
-                # Fall back directly to the oldest element inside the captured dictionary logs
-                return list(extracted_results.values())[0]
+                raise RuntimeError("Critical System Fault: No active document parser extensions found inside local runtime environment.")
                 
         finally:
-            # Housekeeping thread cleanup loop to ensure local disk storage remains pristine
-            if os.path.exists(temp_pdf_name):
+            # Secure Housekeeping Loop: Always remove the temporary artifact using the absolute identifier
+            if os.path.exists(absolute_temp_path):
                 try:
-                    os.remove(temp_pdf_name)
+                    os.remove(absolute_temp_path)
                 except Exception:
                     pass
 
     @staticmethod
     def _extract_docx(file_bytes: bytes) -> str:
-        """Flattens paragraphs and multi-column tables from Word documents."""
+        """Flattens paragraphs and multi-column tables cleanly from Word documents."""
         try:
             doc = Document(io.BytesIO(file_bytes))
             text_accum = []
             
+            # Extract standard linear paragraphs
             for paragraph in doc.paragraphs:
                 if paragraph.text.strip():
                     text_accum.append(paragraph.text.strip())
                     
+            # Extract text arrays from nested table layouts
             for table in doc.tables:
                 for row in table.rows:
                     row_data = " | ".join([cell.text.strip() for cell in row.cells if cell.text.strip()])
