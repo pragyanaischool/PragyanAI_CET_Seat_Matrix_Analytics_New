@@ -1,136 +1,173 @@
 import streamlit as st
-import pandas as pd
+import os
+import sys
 import sqlite3
-from engines.enrichment_engine import CollegeEnrichmentEngine
-from database.db_handler import save_enrichment_record, DB_NAME
+import pandas as pd
 
-def render_intelligence_center():
+# ==============================================================================
+# 🎯 PATH PATCH & CACHE PROTECTION LAYER (PREVENTS INTERMITTENT KEYERRORS)
+# ==============================================================================
+# Resolve absolute root bounds to guarantee module accessibility across sub-pages
+root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if root_path not in sys.path:
+    sys.path.insert(0, root_path)
+
+# Flush old cached module fingerprints out of memory during active session shifting
+for module_key in list(sys.modules.keys()):
+    if (
+        module_key.startswith("engines") 
+        or module_key.startswith("database") 
+        or "matrix_parser" in module_key
+        or "ensemble_orchestrator" in module_key
+        or "enrichment_engine" in module_key
+    ):
+        sys.modules.pop(module_key, None)
+# ==============================================================================
+
+def load_intelligence_data():
     """
-    Renders the Federated Knowledge Discovery and Accreditation 
-    Harvesting interface panel.
+    Queries and extracts full relational data tables from the secure SQLite data lake.
+    
+    Returns:
+        pd.DataFrame: Sanitized historical matrix data workspace.
+    """
+    try:
+        db_path = os.path.join(root_path, "database", "seat_matrix.db")
+        if not os.path.exists(db_path):
+            return pd.DataFrame(columns=['college_name', 'city', 'district', 'address', 'dept', 'intake', 'intake_year'])
+            
+        conn = sqlite3.connect(db_path)
+        df = pd.read_sql_query("SELECT * FROM seat_matrix_records", conn)
+        conn.close()
+        return df
+    except Exception as e:
+        print(f"[Database Connection Error] Failed to read analytical streams: {str(e)}")
+        return pd.DataFrame(columns=['college_name', 'city', 'district', 'address', 'dept', 'intake', 'intake_year'])
+
+def render_college_intelligence():
+    """
+    Main Regional Intelligence View Canvas for PragyanAI.
+    Renders high-level regional distributions, metrics cards, and district-level
+    capacity footprints to evaluate engineering education trends in Karnataka.
     """
     st.set_page_config(
-        page_title="PragyanAI College Intelligence",
-        page_icon="🏛️",
+        page_title="PragyanAI College Intelligence", 
+        page_icon="🏛️", 
         layout="wide"
     )
-
-    # 1. Page Header Branding
-    st.title("🏛️ Knowledge Graph Discovery & Enrichment Center")
-    st.subheader("Verify institutional metrics and pull rankings concurrently from Google, DuckDuckGo, and Wikipedia.")
+    
+    st.title("🏛️ Regional College Intelligence Board")
+    st.subheader("Aggregated multi-engine analytics mapping institutional density and seat capacities across districts.")
     st.markdown("---")
 
-    # 2. Extract uniquely registered campuses from the active data lake
-    try:
-        conn = sqlite3.connect(DB_NAME)
-        # Select distinct pairs to prevent redundant API queries for different branches
-        colleges_df = pd.read_sql_query(
-            "SELECT DISTINCT college_name, city FROM seat_matrix ORDER BY college_name ASC", 
-            conn
-        )
-        conn.close()
-    except Exception as db_err:
-        st.error(f"Database Connectivity Failure: Could not extract institutional lists: {str(db_err)}")
-        colleges_df = pd.DataFrame()
+    # Load records from local analytical storage layer
+    df = load_intelligence_data()
 
-    # 3. Workspace Flow Validation Splitter
-    if colleges_df.empty:
-        st.info("💡 Central database lake is currently empty. Please upload and parse seat matrix files inside Page 1 first.")
+    if df.empty:
+        st.warning("⚠️ Access Log Alert: Database data lake is empty. Please complete processing on page '1 Ingestion Portal' first.")
+        st.info("💡 Next Step: Go to the 'Extraction & Ingestion' page in the sidebar and upload the official seat matrix document.")
         return
 
-    st.markdown("### 🔍 Select and Enrich Institutional Profiles")
-    st.caption("⚡ Powered concurrently by Google Search API, DuckDuckGo Search, and Wikipedia API Wrappers")
+    # --- TOP CONTROL HUB & SLICERS ---
+    st.sidebar.header("Intelligence Controls")
+    
+    # Dynamically extract available academic horizons compiled by ingestion runs
+    available_years = sorted(df['intake_year'].unique().tolist(), reverse=True)
+    selected_year = st.sidebar.selectbox("Select Academic Matrix Horizon", available_years)
+    
+    # Filter working data view based on selected horizontal index
+    year_df = df[df['intake_year'] == selected_year]
 
-    # Create a user-friendly selection drop-down combining name and municipality
-    college_options = colleges_df.apply(lambda r: f"{r['college_name']} ({r['city']})", axis=1).tolist()
-    selected_option = st.selectbox(
-        "Choose target campus profile entity to query open-web knowledge charts:",
-        options=college_options,
-        help="Select the exact college entry you want to enrich with NAAC, NBA, and NIRF metrics."
+    # --- SECTION 1: MACRO KPIS OVERVIEW PANELS ---
+    st.markdown("### 📊 Macro Horizon Performance Indicators")
+    col_inst, col_dept, col_seats = st.columns(3)
+    
+    with col_inst:
+        total_colleges = year_df['college_name'].nunique()
+        st.metric(
+            label="Total Extracted Active Institutions", 
+            value=total_colleges,
+            help="Total count of unique engineering colleges parsed and validated across selected horizons."
+        )
+        
+    with col_dept:
+        total_depts = year_df['dept'].nunique()
+        st.metric(
+            label="Total Registered Academic Disciplines", 
+            value=total_depts,
+            help="Total count of unique course disciplines (branches) offered across the state."
+        )
+        
+    with col_seats:
+        total_intake = year_df['intake'].sum()
+        st.metric(
+            label="Aggregate Distributed State Intake", 
+            value=f"{total_intake:,} Seats",
+            help="Sum total of government and engineering division seats cataloged in this matrix dataset."
+        )
+
+    st.markdown("---")
+
+    # --- SECTION 2: REGIONAL ANALYTICAL FOOTPRINTS ---
+    st.markdown("### 📍 Geographic Capillary and Capacity Analysis")
+    
+    col_table, col_chart = st.columns([2, 3])
+    
+    # Aggregate data using the pre-sanitized district variables
+    district_summary = (
+        year_df.groupby('district')['intake']
+        .sum()
+        .reset_index()
+        .sort_values(by='intake', ascending=False)
+        .reset_index(drop=True)
     )
+    
+    # Add institutional volume count tracking columns dynamically
+    district_colleges = year_df.groupby('district')['college_name'].nunique().reset_index()
+    district_summary = pd.merge(district_summary, district_colleges, on='district')
+    district_summary.columns = ['District Name', 'Total Allocated Intake Seats', 'Active Institutional Count']
 
-    # Extract the true unmapped query strings based on index matching positions
-    selected_idx = college_options.index(selected_option)
-    target_college_name = colleges_df.iloc[selected_idx]['college_name']
-    target_college_city = colleges_df.iloc[selected_idx]['city']
+    with col_table:
+        st.markdown("#### 📋 District Allocation Breakdown Matrix")
+        st.markdown("Sorted in descending order by aggregate seat capacity. Spelling variances are automatically unified via the cleaning rails:")
+        st.dataframe(
+            district_summary,
+            use_container_width=True,
+            hide_index=True
+        )
 
-    # Layout design partition showing current local data versus query operations
-    col_layout_left, col_layout_right = st.columns([2, 3])
-
-    with col_layout_left:
-        st.markdown("#### 🏛️ Selected Profile Context")
-        st.info(f"""
-        **Official Parsed Name:** `{target_college_name}`  
-        
-        **Campus Municipality/City:** `{target_college_city}`
-        """)
-        
-        # Trigger button for federated searching
-        execute_search_trigger = st.button(
-            f"🌐 Run Federated Web Search Discovery Engine", 
-            type="primary", 
+    with col_chart:
+        st.markdown("#### 📊 Regional Capacity Capacity Comparison Chart")
+        st.markdown("Visual distribution footprint mapping seat opportunities per technical division hub:")
+        # Render clean vertical comparative visual charts
+        st.bar_chart(
+            data=district_summary,
+            x='District Name',
+            y='Total Allocated Intake Seats',
             use_container_width=True
         )
 
-    with col_layout_right:
-        st.markdown("#### 💎 Live Enrichment Results Output")
-        
-        if execute_search_trigger:
-            with st.spinner(f"Scouring web nodes, index records, and encyclopedias for '{target_college_name}'..."):
-                try:
-                    # Initialize our multi-engine search coordinator class instance
-                    enrichment_processor = CollegeEnrichmentEngine()
-                    
-                    # Execute synchronous search & extraction routine loops
-                    enriched_result_payload = enrichment_processor.discover_college_details(
-                        target_college_name, 
-                        target_college_city
-                    )
-                    
-                    # Step 4: Commit parsed parameters right into the cache database
-                    save_enrichment_record(enriched_result_payload)
-                    
-                    st.success("🎉 Target institution metrics successfully harvested and synchronized with local cache repositories!")
-                    
-                    # Display structured output fields elegantly via metrics cards
-                    st.json(enriched_result_payload)
-                    
-                except Exception as enrichment_err:
-                    st.error(f"Enrichment Execution Intercepted Exception: {str(enrichment_err)}")
-        else:
-            st.write("Click the button on the left to pull real-time accreditation data and website URLs.")
-
+    # --- SECTION 3: COURSE LEVEL DISTRIBUTION MARGINS ---
     st.markdown("---")
-
-    # 5. Master Enriched Ledger Cache View
-    st.markdown("### 📑 Master Enriched Intelligence Cache Registry")
-    st.markdown("Review all institutional profiles currently enriched and verified across the data lake:")
+    st.markdown("### 🚀 Discipline Footprint Distribution")
+    st.markdown("Top 15 academic disciplines ordered by total across-the-state seat allocations:")
     
-    try:
-        conn = sqlite3.connect(DB_NAME)
-        master_registry_df = pd.read_sql_query("SELECT * FROM college_enrichment ORDER BY college_name ASC", conn)
-        conn.close()
-        
-        if not master_registry_df.empty:
-            # Format columns beautifully to emphasize analytics parameters
-            st.dataframe(
-                master_registry_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "college_name": st.column_config.TextColumn("Verified Institution Name", width="medium"),
-                    "website": st.column_config.LinkColumn("Official Portal domain", width="small"),
-                    "naac_rating": st.column_config.TextColumn("NAAC Grade", width="small"),
-                    "nba_accredited": st.column_config.TextColumn("NBA Accreditation", width="small"),
-                    "nirf_ranking": st.column_config.TextColumn("NIRF Ranking Index", width="small"),
-                    "summary": st.column_config.TextColumn("Executive Summary Profile", width="large")
-                }
-            )
-        else:
-            st.warning("No enriched cache ledger records exist inside the local storage engine yet. Run an open-web query above.")
-    except Exception as registry_err:
-        st.error(f"Failed to load systemic metadata cache tables: {str(registry_err)}")
+    course_summary = (
+        year_df.groupby('dept')['intake']
+        .sum()
+        .reset_index()
+        .sort_values(by='intake', ascending=False)
+        .head(15)
+        .reset_index(drop=True)
+    )
+    course_summary.columns = ['Engineering Branch Discipline', 'Aggregated Allocated Seats']
+    
+    st.bar_chart(
+        data=course_summary,
+        x='Engineering Branch Discipline',
+        y='Aggregated Allocated Seats',
+        use_container_width=True
+    )
 
 if __name__ == "__main__":
-    render_intelligence_center()
-  
+    render_college_intelligence()
