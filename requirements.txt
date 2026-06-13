@@ -4,7 +4,7 @@ streamlit
 # Data Manipulation & Numerical Processing
 pandas
 openpyxl
-
+ddgs
 # Document Binary Parsers & Extractors
 pypdf
 python-docx
