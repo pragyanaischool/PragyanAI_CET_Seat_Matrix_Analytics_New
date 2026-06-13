@@ -12,7 +12,7 @@ class CETSeatMatrixParser:
     distinct individual rows per course discipline to eliminate signature violations.
     """
     def __init__(self):
-        # High-capacity versatile model to handle complex layout parsing and formatting recovery
+        # High-capacity versatile model line configured for zero-shot tabular construction
         self.llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.0)
         
         # Explicit prompt to split horizontally lumped or visually wrapped tracks into distinct rows
@@ -210,6 +210,9 @@ class CETSeatMatrixParser:
                 if len(dept_str) > 75 or any(dept_str.count(kw) > 1 for kw in ["ENGINEERING", "SCIENCE"]) or "SEATS" in dept_str:
                     is_signature_violated = True
                     break
+            # Guard checking if intake indices caught physical pincodes
+            if any(df_final['intake'] > 1000):
+                is_signature_violated = True
 
         # Fallback to the llama-3.3-70b-versatile architecture if an un-fragmented violation is detected
         if df_final.empty or is_signature_violated or df_final['dept'].isna().sum() > (len(df_final) * 0.1):
