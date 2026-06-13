@@ -14,6 +14,7 @@ langchain
 langchain-core
 langchain-groq
 langchain-community
+langchain-huggingface
 
 # Federated Open-Web Search Tools
 google-search-results
@@ -27,3 +28,4 @@ sentence-transformers
 huggingface-hub
 torch
 torchvision
+duckduckgo-search
