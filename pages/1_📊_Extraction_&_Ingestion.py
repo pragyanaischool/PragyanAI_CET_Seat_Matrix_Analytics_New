@@ -1,31 +1,28 @@
 import streamlit as st
-import pandas as pd
-from engines.document_extractor import PragyanDocumentExtractor
-from engines.matrix_parser import CETSeatMatrixParser
-from database.db_handler import save_matrix_records
-
-import streamlit as st
 import os
 import sys
 
 # ==============================================================================
-# 🎯 DYNAMIC PATH ANCHOR & SYSTEM CACHE PROTECTION
+# 🎯 PATH PATCH & CACHE PROTECTION LAYER (FIX FOR IMPORT KEYERRORS)
 # ==============================================================================
-# 1. Deduce absolute root directory footprint paths
+# 1. Deduce the absolute root directory footprint paths
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # 2. Inject parent root framework path into global execution lookup directories
 if root_path not in sys.path:
     sys.path.insert(0, root_path)
 
-# 3. CRITICAL: Clear partial or corrupted sys.modules tracking caches 
-# to explicitly prevent internal sub-page KeyErrors during hot-reloads
+# 3. FIX: Completely drop any cached or partial module instances to prevent KeyErrors
 for module_key in list(sys.modules.keys()):
-    if module_key.startswith("engines") or module_key.startswith("database"):
+    if (
+        module_key.startswith("engines") 
+        or module_key.startswith("database") 
+        or "matrix_parser" in module_key
+    ):
         sys.modules.pop(module_key, None)
 # ==============================================================================
 
-# Now safe to proceed with absolute package references
+# Now completely safe to proceed with standard package references
 import pandas as pd
 from engines.document_extractor import PragyanDocumentExtractor
 from engines.matrix_parser import CETSeatMatrixParser
