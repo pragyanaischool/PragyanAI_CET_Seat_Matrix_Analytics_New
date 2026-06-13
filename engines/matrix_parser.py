@@ -228,4 +228,3 @@ class CETSeatMatrixParser:
             df_final.reset_index(drop=True, inplace=True)
             
         return df_final
-        
