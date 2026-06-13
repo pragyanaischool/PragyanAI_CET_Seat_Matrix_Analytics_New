@@ -3,209 +3,281 @@ import re
 import json
 import time
 import random
-import concurrent.futures
-from langchain_community.utilities import WikipediaAPIWrapper
-from langchain_community.utilities import SerpAPIWrapper
-from langchain_community.tools import DuckDuckGoSearchRun
+import tempfile
+import pandas as pd
+from typing import List, Optional
+from pydantic import BaseModel, Field
 from langchain_groq import ChatGroq
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-class CollegeEnrichmentEngine:
+try:
+    from docling.document_converter import DocumentConverter as IBMDoclingConverter
+except ImportError:
+    IBMDoclingConverter = None
+
+# ==============================================================================
+# 📋 1. DEFINE TARGET DATA STRUCTURE (Pydantic - Preserved from Workspace)
+# ==============================================================================
+class SeatMatrixRecord(BaseModel):
     """
-    Enhanced Fault-Tolerant Federated Knowledge Discovery Engine for PragyanAI.
-    Concurrently queries multi-engine web search streams (SerpAPI, DuckDuckGo, Wikipedia),
-    employs an Adaptive Exponential Jitter Backoff Multi-LLM Failover routing pool 
-    for semantic consolidation, and enforces strict relational alignment keys.
+    Represents a single course intake row extracted from the seat matrix PDF.
     """
-    def __init__(self):
-        # --- PHASE 0: SAFE WRAPPER INITIALIZATION ---
-        try:
-            self.wiki = WikipediaAPIWrapper()
-        except Exception:
-            self.wiki = None
-            
-        try:
-            self.serp_search = SerpAPIWrapper()
-        except Exception:
-            self.serp_search = None
-            
-        try:
-            self.ddg_search = DuckDuckGoSearchRun()
-        except Exception:
-            self.ddg_search = None
-            
-        # 🎯 Pure Groq-Llama Extraction & Consolidation Model Pool
-        self.enrichment_model_pool = [
-            {"provider": "groq", "name": "llama-3.3-70b-versatile"},
-            {"provider": "groq", "name": "llama-3.1-8b-instant"},
-            {"provider": "groq", "name": "llama3-70b-8192"},
-            {"provider": "groq", "name": "llama3-8b-8192"}
-        ]
+    college_name: str = Field(
+        ..., 
+        description="The name of the institution or university (e.g., 'THE KISHKINDA UNIVERSITY')"
+    )
+    city: Optional[str] = Field(
+        None, 
+        description="The city where the college is located if identifiable from the text or address."
+    )
+    district: Optional[str] = Field(
+        None, 
+        description="The district where the college is located."
+    )
+    address: Optional[str] = Field(
+        None, 
+        description="The full address of the college/university."
+    )
+    dept: Optional[str] = Field(
+        None, 
+        description="The full name of the department/course (e.g., 'COMPUTER SCIENCE AND ENGG')."
+    )
+    intake: Optional[int] = Field(
+        None, 
+        description="The numeric total intake or KEA seat value assigned for this course."
+    )
+    intake_year: Optional[int] = Field(
+        2024, 
+        description="The intake year. Default to 2024 unless the PDF text explicitly specifies another year."
+    )
 
-    def _get_provider_client(self, model_meta: dict):
-        """Dynamic runtime adapter tracking and instantiation mapping using pure Groq profiles."""
-        model_name = model_meta["name"]
-        return ChatGroq(model_name=model_name, temperature=0.0, max_tokens=2048)
+class SeatMatrixExtraction(BaseModel):
+    """
+    Container to hold list of structured records returned from the LLM.
+    """
+    records: List[SeatMatrixRecord] = Field(
+        default=[], 
+        description="A list of structured seat matrix data records extracted from the parsed document chunk."
+    )
 
-    def _query_google_stream(self, query: str) -> str:
-        if not self.serp_search:
-            return "Google Search Wrapper uninitialized or missing API key tokens."
-        try:
-            return f"=== GOOGLE SEARCH STREAM RES ===\n{self.serp_search.run(query)}"
-        except Exception as e:
-            return f"Google Search Stream Bypassed/Failed: {str(e)}"
 
-    def _query_ddg_stream(self, query: str) -> str:
-        if not self.ddg_search:
-            return "DuckDuckGo Wrapper uninitialized."
-        try:
-            return f"=== DUCKDUCKGO STREAM RES ===\n{self.ddg_search.run(query)}"
-        except Exception as e:
-            return f"DuckDuckGo Stream Bypassed/Failed: {str(e)}"
-
-    def _query_wikipedia_stream(self, college_name: str, city: str) -> str:
-        if not self.wiki:
-            return "Wikipedia Wrapper uninitialized."
-        try:
-            return f"=== WIKIPEDIA ARTICLE STREAM RES ===\n{self.wiki.run(f'{college_name} {city}')}"
-        except Exception as e:
-            return f"Wikipedia Stream Bypassed/Failed: {str(e)}"
-
-    def _invoke_semantic_cascade(self, prompt: str) -> str:
-        """
-        Loops through the custom model pool and shifts endpoints dynamically.
-        Implements an adaptive exponential backoff with random jitter when encountering 
-        rate limits (429) or token window restrictions to prevent extraction failures.
-        """
-        base_delay = 2.0  # Initial sleep delay in seconds
-        max_retries = 5
+# ==============================================================================
+# 🚀 2. THE PIPELINE ORCHESTRATOR CLASS (With Adaptive Cascade Failover)
+# ==============================================================================
+class PragyanEnsembleParser:
+    """
+    High-Throughput Pure Groq Multi-LLM Cascading Failover Ingestion Engine.
+    Combines your original PDFToCSVPipeline structural logic with multi-tier backoff 
+    protection to handle high-volume text chunk loads seamlessly without API drops.
+    """
+    def __init__(self, groq_api_key: Optional[str] = None):
+        # Resolve the key token from parameter injection fallback to global server environment definitions
+        self.api_key = groq_api_key or os.getenv("GROQ_API_KEY", "")
         
-        for idx, model_meta in enumerate(self.enrichment_model_pool):
+        # 🎯 Dynamic Multi-Tier Groq Cascade Model Pool 
+        self.cascade_pool = [
+            {"name": "llama-3.3-70b-versatile"},
+            {"name": "llama-3.1-8b-instant"},
+            {"name": "llama3-70b-8192"},
+            {"name": "llama3-8b-8192"}
+        ]
+        
+        # Original Colab Instruction Prompt Framework Mapped Intact
+        self.prompt_template = ChatPromptTemplate.from_messages([
+            ("system", (
+                "You are an expert data extraction assistant. Your task is to extract structured tabular information "
+                "from college seat matrix documents.\n\n"
+                "Review the provided raw markdown carefully. Pay special attention to: \n"
+                "- Institutional details (Name, Address, City, District) which are usually listed before a sequence of tables.\n"
+                "- Course or Department entries and their associated total intake values.\n"
+                "- If a field (like city, district, or address) is missing, infer it from the context if possible, "
+                "or leave it empty/null if unknown."
+            )),
+            ("user", "Here is a section of the parsed seat matrix document:\n\n{text_chunk}\n\nExtract all records.")
+        ])
+
+    def _get_structured_extractor(self, model_name: str):
+        """Instantiates a structured ChatGroq instance utilizing LangChain schemas."""
+        llm = ChatGroq(
+            model=model_name,
+            temperature=0,  # Zero-temp for deterministic structure extraction
+            api_key=self.api_key,
+            max_tokens=4096
+        )
+        return llm.with_structured_output(SeatMatrixExtraction)
+
+    def _invoke_cascade_broker(self, chunk: str) -> Optional[SeatMatrixExtraction]:
+        """
+        Loops through the multi-LLM model pool with exponential backoff and random jitter 
+        to ensure processing continues even if specific Groq API tiers hit daily token limits.
+        """
+        formatted_messages = self.prompt_template.format_messages(text_chunk=chunk)
+        base_delay = 2.0  # Base delay tracking parameters
+        max_retries = 4
+        
+        for idx, model_meta in enumerate(self.cascade_pool):
             retries = 0
+            model_name = model_meta["name"]
+            
             while retries < max_retries:
                 try:
-                    llm_instance = self._get_provider_client(model_meta)
-                    response = llm_instance.invoke(prompt).content
-                    return response.strip()
+                    structured_extractor = self._get_structured_extractor(model_name)
+                    result = structured_extractor.invoke(formatted_messages)
+                    
+                    if result and isinstance(result, SeatMatrixExtraction):
+                        return result
                 except Exception as e:
                     err_msg = str(e)
-                    
-                    # Catch Rate Limits (429), Token Limits, or congested server thresholds
+                    # Intercept rate limit exhaustion indicators safely (429, TPM, TPD restrictions)
                     if any(k in err_msg or k in err_msg.lower() for k in ["429", "rate_limit", "limit reached", "quota", "overloaded"]):
                         retries += 1
-                        # Apply exponential backoff with a randomized multiplier (jitter) to prevent lock synchronization
                         sleep_duration = (base_delay ** retries) + random.uniform(0.5, 1.5)
-                        print(f"    [!] Rate Limit hit for [{model_meta['name']}]. Retry {retries}/{max_retries}. Sleeping for {sleep_duration:.2f}s...")
+                        print(f"    [!] Rate Limit caught for [{model_name}]. Retry {retries}/{max_retries}. Sleeping for {sleep_duration:.2f}s...")
                         time.sleep(sleep_duration)
                         continue
                     else:
-                        print(f"    [!] Critical Model Exception hit on enrichment layer: {err_msg}")
+                        print(f"    [!] Non-rate exception hit on model layer [{model_name}]: {err_msg}")
                         raise e
             
-            # If a single model fails completely after all retries, cascade directly to the next model layout
-            print(f"    [!] Exhausted all retries for model [{model_meta['name']}]. Cascading to fallback tier...")
+            print(f"    [!] Model tier [{model_name}] completely exhausted or rate-limited. Cascading down chain...")
 
-        # Emergency Safe Guard: Apply randomized fallback sleep if the entire cluster pool is congested
-        print("    [⚠️] CRITICAL: Entire enrichment cluster congested. Injecting emergency jitter sleep...")
+        # Ultimate Safe Guard: Inject structural cooldown delay if the entire cascade cluster is hot
+        print("    [⚠️] CRITICAL: Entire Groq cascade pool rate-limited. Forcing emergency jitter sleep...")
         time.sleep(8.0 + random.uniform(1.0, 3.0))
         
-        emergency_llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.0)
-        return emergency_llm.invoke(prompt).content.strip()
+        emergency_extractor = self._get_structured_extractor("llama-3.3-70b-versatile")
+        return emergency_extractor.invoke(formatted_messages)
 
-    def discover_college_details(self, college_name: str, city: str) -> dict:
+    def parse_pdf_to_markdown(self, pdf_path_or_bytes) -> str:
         """
-        Orchestrates parallel multi-threaded federated web searches.
-        Guarantees structured relational key returns even during total network failure.
+        Uses IBM Docling to convert layout-complex PDFs into semantic Markdown.
+        Handles both file-system paths (Colab) and raw binary arrays (Streamlit file stream) smoothly.
         """
-        # Enforce strict text casing boundaries to eliminate key-mismatch risks during merge operations
-        target_college_clean = str(college_name).strip().upper()
-        target_city_clean = str(city).strip().upper()
+        if isinstance(pdf_path_or_bytes, bytes):
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
+                temp_pdf.write(pdf_path_or_bytes)
+                absolute_path = os.path.abspath(temp_pdf.name)
+            is_temp = True
+        else:
+            absolute_path = pdf_path_or_bytes
+            is_temp = False
 
-        search_query = f"{target_college_clean} {target_city_clean} official website NAAC Grade NBA Accreditation NIRF Ranking"
-        context_accumulator = []
-
-        # --- PHASE 1: ASYNCHRONOUS THREADED BROKERS ---
-        # Executes search wrappers concurrently across parallel background threads to skip I/O bottlenecks
+        markdown_text = ""
         try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                future_google = executor.submit(self._query_google_stream, search_query)
-                future_ddg = executor.submit(self._query_ddg_stream, search_query)
-                future_wiki = executor.submit(self._query_wikipedia_stream, target_college_clean, target_city_clean)
-
-                context_accumulator.append(future_google.result())
-                context_accumulator.append(future_ddg.result())
-                context_accumulator.append(future_wiki.result())
-        except Exception as thread_fault:
-            context_accumulator.append(f"Threadpool allocation broken: {str(thread_fault)}")
-
-        compiled_search_context = "\n\n".join(context_accumulator)
-
-        # --- PHASE 2: SEMANTIC CONSOLIDATION SYSTEM ---
-        template = """
-        You are an elite educational intelligence agent parsing web search context logs for administrative records.
-        Analyze the provided context streams thoroughly and isolate official verification parameters for: {target_college} located in {target_city}.
-        
-        Context Input Streams:
-        {raw_context}
-        
-        Extract the following parameters strictly based on facts present inside the text:
-        1. website: Provide ONLY the pure string URL path, e.g., "https://www.bmsit.ac.in". Do NOT use markdown brackets or link formatting.
-        2. naac_rating: Must be formatted as a standard uppercase grade, e.g., A++, A+, A, B, Not Accredited, or N/A.
-        3. nba_accredited: Specify cleanly: Yes, No, or Partially Accredited.
-        4. nirf_ranking: Provide the exact current numerical integer placement or ranking band range like "151-200". If not found, output "N/A".
-        5. summary: A brief, authoritative 2-sentence structural summary detailing history and focus.
-        
-        Return the metrics strictly formatted inside a single valid JSON block.
-        Do not include any preamble, markdown formatting ticks, or conversational commentary.
-        
-        Target JSON Format to Output:
-        {{
-            "website": "https://www.example.edu.in",
-            "naac_rating": "A+",
-            "nba_accredited": "Partially Accredited",
-            "nirf_ranking": "151-200",
-            "summary": "Established institution focusing on engineering sciences and technology placement frameworks."
-        }}
-        """
-
-        try:
-            formatted_prompt = template.format(
-                target_college=target_college_clean,
-                target_city=target_city_clean,
-                raw_context=compiled_search_context
-            )
-            
-            # Execute the prompt payload using the multi-LLM failover router
-            clean_content = self._invoke_semantic_cascade(formatted_prompt)
-            
-            # Regular expression boundary extractor isolates the JSON body safely
-            json_match = re.search(r'\{.*\}', clean_content, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(0)
+            print(f"[*] Extracting PDF layout using Docling: {absolute_path}...")
+            if IBMDoclingConverter is not None:
+                converter = IBMDoclingConverter()
+                result = converter.convert(absolute_path)
+                markdown_text = result.document.export_to_markdown()
+                print("[+] PDF parsed successfully!")
             else:
-                start_idx = clean_content.find("{")
-                end_idx = clean_content.rfind("}") + 1
-                json_str = clean_content[start_idx:end_idx] if start_idx != -1 else clean_content
-
-            extracted_data = json.loads(json_str)
-
-            # Ensure all schema keys are present and uncorrupted
-            for field in ["website", "naac_rating", "nba_accredited", "nirf_ranking", "summary"]:
-                if field not in extracted_data or not str(extracted_data[field]).strip():
-                    extracted_data[field] = "N/A"
-
+                print("[!] Error: IBM Docling package is missing or uninstalled inside runtime wheels.")
         except Exception as e:
-            print(f"[Enrichment Framework Recovered] Network/Format drop handled: {str(e)}")
-            extracted_data = {
-                "website": "N/A",
-                "naac_rating": "N/A",
-                "nba_accredited": "N/A",
-                "nirf_ranking": "N/A",
-                "summary": "Institutional data recorded cleanly. Web infrastructure lookup skipped."
-            }
+            print(f"[!] Critical Error during Docling conversion layer: {str(e)}")
+        finally:
+            if is_temp and os.path.exists(absolute_path):
+                os.remove(absolute_path)
 
-        # 🎯 THE ANTI-COLLAPSE LOCK:
-        # Re-bind the exact clean input keys to guarantee a perfect relational pd.merge join match
-        extracted_data["college_name"] = target_college_clean
-        extracted_data["city"] = target_city_clean
+        return markdown_text
+
+    def extract_structured_data(self, markdown_text: str, intake_year: int = 2024) -> List[SeatMatrixRecord]:
+        """
+        Splits Markdown text into chunks and processes them via the multi-LLM cascading broker.
+        """
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=4000, 
+            chunk_overlap=500,
+            separators=["\n\n", "\n", " "]
+        )
+        chunks = text_splitter.split_text(markdown_text)
+        print(f"[*] Document split into {len(chunks)} chunks for LLM processing...")
+
+        all_extracted_records = []
+
+        for i, chunk in enumerate(chunks):
+            # Performance Optimization Step: Skip irrelevant text fragments to preserve token quotas
+            if "COURSE NAME" not in chunk.upper() and "INTAKE" not in chunk.upper() and len(chunk.strip()) < 120:
+                continue
+                
+            print(f"    -> Extracting chunk {i+1}/{len(chunks)}...")
+            try:
+                extraction_result = self._invoke_cascade_broker(chunk)
+                
+                if extraction_result and extraction_result.records:
+                    print(f"       [✓] Extracted {len(extraction_result.records)} records from this chunk.")
+                    # Inject and synchronize selection context properties cleanly before appending
+                    for record in extraction_result.records:
+                        if not record.intake_year or record.intake_year == 2024:
+                            record.intake_year = int(intake_year)
+                        all_extracted_records.append(record)
+                else:
+                    print("       [-] No records identified in this chunk.")
+            except Exception as e:
+                print(f"       [!] Error extracting chunk {i+1}: {e}")
+                continue
+
+        return all_extracted_records
+
+    def analyze_and_extract_matrix(self, file_bytes: bytes, intake_year: int) -> pd.DataFrame:
+        """
+        Streamlit Interface Adapter Pipeline Core.
+        Processes raw document binary bytes through extraction loops and returns case-normalized dataframes.
+        """
+        if not self.api_key:
+            raise ValueError("Groq API key missing. Initialize with key or export GROQ_API_KEY tokens.")
+            
+        markdown_text = self.parse_pdf_to_markdown(file_bytes)
+        if not markdown_text.strip():
+            return pd.DataFrame()
+            
+        records = self.extract_structured_data(markdown_text, intake_year)
         
-        return extracted_data
+        raw_list_of_dicts = [record.model_dump() for record in records]
+        df = pd.DataFrame(raw_list_of_dicts)
+        
+        if not df.empty:
+            columns_order = ["college_name", "city", "district", "address", "dept", "intake", "intake_year"]
+            df = df.reindex(columns=columns_order)
+        return df
+
+    def run(self, pdf_path: str, output_csv_path: str, intake_year: int = 2024):
+        """
+        Command-Line / Google Colab Interface Execution Block.
+        Runs full conversion lifecycle processing loops and maps data to disk target layouts.
+        """
+        if not self.api_key:
+            print("[!] Warning: GROQ_API_KEY environment variable is not set.")
+            self.api_key = input("Enter Groq API Key: ").strip()
+            if not self.api_key:
+                print("[!] Cancelled. Missing API key tokens.")
+                return
+
+        markdown_text = self.parse_pdf_to_markdown(pdf_path)
+        records = self.extract_structured_data(markdown_text, intake_year)
+        
+        print(f"[*] Exporting parsed data to CSV format...")
+        raw_list_of_dicts = [record.model_dump() for record in records]
+        df = pd.DataFrame(raw_list_of_dicts)
+        
+        if not df.empty:
+            columns_order = ["college_name", "city", "district", "address", "dept", "intake", "intake_year"]
+            df = df.reindex(columns=columns_order)
+            df.to_csv(output_csv_path, index=False)
+            print(f"[✓] Data pipeline run completed! File saved to: {output_csv_path}")
+            print(df.head(10))
+        else:
+            print("[!] Pipeline completed but no valid records were extracted.")
+
+
+# ==============================================================================
+# 3. DIRECT COHESIVE INSTANTIATION BLOCK (Colab Mode Safety Wrapper)
+# ==============================================================================
+if __name__ == "__main__":
+    # Standard script configuration parameters for manual file checks
+    PDF_FILE_PATH = "seat_matrix2052024kannada.pdf"  
+    OUTPUT_CSV_PATH = "seat_matrix_extracted.csv"
+    
+    pipeline = PragyanEnsembleParser()
+    pipeline.run(PDF_FILE_PATH, OUTPUT_CSV_PATH, intake_year=2024)
+    
