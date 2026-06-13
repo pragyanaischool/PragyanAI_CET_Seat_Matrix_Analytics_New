@@ -9,19 +9,18 @@ from pydantic import BaseModel, Field
 # ==============================================================================
 # 0. STRICT ISOLATION OF GLOBAL CACHE SYSTEM PATHS (SYSTEM ENVIRONMENT LEVEL)
 # ==============================================================================
-# We set these instantly at the entry point boundary before importing heavy modules
 tmp_dir = tempfile.gettempdir()
 os.environ["RAPIDOCR_MODEL_DIR"] = os.path.join(tmp_dir, "rapidocr_models")
 os.environ["HF_HOME"] = os.path.join(tmp_dir, "huggingface_cache")
 os.environ["XDG_CACHE_HOME"] = os.path.join(tmp_dir, "xdg_cache")
 os.environ["TORCH_HOME"] = os.path.join(tmp_dir, "torch_cache")
 
-# Build target operational folders programmatically
+# Build target operational folders programmatically to ensure write permissions
 os.makedirs(os.environ["RAPIDOCR_MODEL_DIR"], exist_ok=True)
 
-# Now it is completely safe to resolve structural data pipeline modules
+# Safe to import core structural data pipeline modules now
 from docling.document_converter import DocumentConverter, PdfFormatOption
-from docling.datamodel.pipeline_options import PdfPipelineOptions, OcrOptions
+from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.datamodel.base_models import InputFormat
 from langchain_groq import ChatGroq
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -40,7 +39,7 @@ class SeatMatrixRecord(BaseModel):
     intake_year: Optional[int] = Field(None, description="The structural allocation year context for this specific row.")
 
 class SeatMatrixExtraction(BaseModel):
-    records: List[SeatMatrixRecord] = Field(default=[], description="Structured institutional rows matching target schema schema.")
+    records: List[SeatMatrixRecord] = Field(default=[], description="Structured institutional rows matching target schema formatting.")
 
 # ==========================================
 # 2. DATABASE RELATIONAL OPERATION LAYER
@@ -62,23 +61,24 @@ st.markdown("""
 This module extracts layout-heavy tabular data from engineering seat matrices, normalizes attributes to schema-rigid configurations, and logs records to SQL.
 """)
 
-# Input configuration controllers
-col_left, col_right = st.columns(2)
-with col_left:
-    target_year = st.number_input(
-        "Specify Target Intake Allocation Year:", 
-        min_value=2020, 
-        max_value=2035, 
-        value=2024,
-        help="This value populates the intake_year attribute column for every entry tuple."
-    )
-with col_right:
-    groq_api_key = st.text_input(
-        "Groq API Key Authorization:", 
-        type="password", 
-        value=os.getenv("GROQ_API_KEY", ""),
-        help="Required to authorize LLM execution channels."
-    )
+# ==========================================
+# FETCHING GROQ API KEY FROM STREAMLIT SECRETS
+# ==========================================
+# Check secrets workspace first, fall back to environment variables or manual fallback strings
+if "GROQ_API_KEY" in st.secrets:
+    groq_api_key = st.secrets["GROQ_API_KEY"]
+    st.sidebar.success("🔒 Authenticated securely via Streamlit Secrets!")
+else:
+    st.sidebar.warning("⚠️ GROQ_API_KEY missing from st.secrets")
+    groq_api_key = st.sidebar.text_input("Provide Groq API Key Manually:", type="password", value=os.getenv("GROQ_API_KEY", ""))
+
+target_year = st.number_input(
+    "Specify Target Intake Allocation Year:", 
+    min_value=2020, 
+    max_value=2035, 
+    value=2024,
+    help="This value populates the intake_year attribute column for every entry tuple."
+)
 
 uploaded_file = st.file_uploader("Upload Seat Matrix Registry PDF File", type=["pdf"])
 
@@ -87,10 +87,10 @@ uploaded_file = st.file_uploader("Upload Seat Matrix Registry PDF File", type=["
 # ==========================================
 if st.button("Execute Extraction & Sync Pipeline") and uploaded_file:
     if not groq_api_key:
-        st.error("❌ Authorization terminated: Please enter a valid Groq API Key.")
+        st.error("❌ Authorization terminated: Please enter or provide a valid Groq API Key.")
         st.stop()
         
-    with st.spinner("Step 1: Instantiating Docling Layout Parsers with Explicit User-Writable Paths..."):
+    with st.spinner("Step 1: Instantiating Docling Layout Parsers with Safe Defaults..."):
         try:
             # Trap the uploaded stream footprint inside transient volume paths safely
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
@@ -98,13 +98,12 @@ if st.button("Execute Extraction & Sync Pipeline") and uploaded_file:
                 tmp_path = tmp.name
 
             # ==================================================================
-            # ADVANCED DEFENSE: PROGRAMMATIC INJECTION OF CACHE ARGS INTO DOCLING
+            # FIX: REMOVED BLANK OcrOptions() VALUE INITIALIZATION TO PREVENT PYDANTIC ERROR
             # ==================================================================
-            # Force Docling's specific OCR choices to point to user-writable space
+            # Allowing PdfPipelineOptions to spin up its native default settings avoids missing 'lang' errors
             pipeline_options = PdfPipelineOptions()
-            pipeline_options.ocr_options.ocr_engine = OcrOptions().ocr_engine # Use default fallback engine
+            pipeline_options.do_ocr = True  # Explicitly enable text layer recovery securely
             
-            # Explicitly lock down formatting converters using pipeline option mappings
             converter = DocumentConverter(
                 format_options={
                     InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
@@ -114,7 +113,7 @@ if st.button("Execute Extraction & Sync Pipeline") and uploaded_file:
             conversion_output = converter.convert(tmp_path)
             markdown_payload = conversion_output.document.export_to_markdown()
             
-            st.success("✅ Layout structural tables indexed safely using customized writable path overrides!")
+            st.success("✅ Layout structural tables indexed safely using default writable option parameters!")
             
             # Subdivide heavy text components into processing segments
             splitter = RecursiveCharacterTextSplitter(chunk_size=4000, chunk_overlap=400)
@@ -168,7 +167,7 @@ if st.button("Execute Extraction & Sync Pipeline") and uploaded_file:
                     if target_column not in final_extracted_df.columns:
                         final_extracted_df[target_column] = None
                 
-                # Strict structural index configuration sorting matching your schema rules
+                # Strict structural index configuration sorting matching layout requirements
                 final_extracted_df = final_extracted_df[[
                     "college_name", "city", "district", "address", "dept", "intake", "intake_year"
                 ]]
@@ -182,7 +181,7 @@ if st.button("Execute Extraction & Sync Pipeline") and uploaded_file:
                 st.success(f"🎉 Pipeline execution success! Synced {len(final_extracted_df)} rows directly into 'matrix_records.db'.")
                 st.dataframe(final_extracted_df, use_container_width=True)
                 
-                # Expose local download download handlers
+                # Expose local download handlers
                 csv_download_payload = final_extracted_df.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     label="📥 Download Extracted Matrix Register as CSV",
@@ -197,4 +196,3 @@ if st.button("Execute Extraction & Sync Pipeline") and uploaded_file:
             
         except Exception as system_error:
             st.error(f"💥 Processing Engine Core Error Interruption: {str(system_error)}")
-            st.info("Ensure your Groq API Token parameters are active and valid.")
