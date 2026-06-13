@@ -7,18 +7,22 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 # ==============================================================================
-# 0. RE-ROUTE ENVIRONMENT MODEL CACHES TO AVOID PERMISSION DENIED (ERRNO 13)
+# 0. STRICT ISOLATION OF GLOBAL CACHE SYSTEM PATHS (SYSTEM ENVIRONMENT LEVEL)
 # ==============================================================================
-# Explicitly force cache architectures away from system site-packages folders
-os.environ["RAPIDOCR_MODEL_DIR"] = os.path.join(tempfile.gettempdir(), "rapidocr_models")
-os.environ["HF_HOME"] = os.path.join(tempfile.gettempdir(), "huggingface_cache")
-os.environ["XDG_CACHE_HOME"] = os.path.join(tempfile.gettempdir(), "xdg_cache")
+# We set these instantly at the entry point boundary before importing heavy modules
+tmp_dir = tempfile.gettempdir()
+os.environ["RAPIDOCR_MODEL_DIR"] = os.path.join(tmp_dir, "rapidocr_models")
+os.environ["HF_HOME"] = os.path.join(tmp_dir, "huggingface_cache")
+os.environ["XDG_CACHE_HOME"] = os.path.join(tmp_dir, "xdg_cache")
+os.environ["TORCH_HOME"] = os.path.join(tmp_dir, "torch_cache")
 
-# Create directories programmatically to verify user write clearance
+# Build target operational folders programmatically
 os.makedirs(os.environ["RAPIDOCR_MODEL_DIR"], exist_ok=True)
 
-# Post-environmental initialization imports
-from docling.document_converter import DocumentConverter
+# Now it is completely safe to resolve structural data pipeline modules
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, OcrOptions
+from docling.datamodel.base_models import InputFormat
 from langchain_groq import ChatGroq
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import ChatPromptTemplate
@@ -39,18 +43,17 @@ class SeatMatrixExtraction(BaseModel):
     records: List[SeatMatrixRecord] = Field(default=[], description="Structured institutional rows matching target schema schema.")
 
 # ==========================================
-# 2. DATABASE SYSTEM OPERATION LAYER
+# 2. DATABASE RELATIONAL OPERATION LAYER
 # ==========================================
 def save_dataframe_to_sqlite(df: pd.DataFrame):
     """Inserts the extracted data frame into the local shared SQLite system."""
     conn = sqlite3.connect("matrix_records.db")
-    # Columns missing data components will be written gracefully as NULL values
     df.to_sql("colleges", conn, if_exists="append", index=False)
     conn.commit()
     conn.close()
 
 # ==========================================
-# 3. INTERFACE COMPONENT LAYER
+# 3. USER INTERFACE LAYOUT PLATFORM
 # ==========================================
 st.set_page_config(page_title="Data Extraction Engine", layout="wide")
 
@@ -87,37 +90,49 @@ if st.button("Execute Extraction & Sync Pipeline") and uploaded_file:
         st.error("❌ Authorization terminated: Please enter a valid Groq API Key.")
         st.stop()
         
-    with st.spinner("Step 1: Ingesting layout tables via Docling (Redirected Write Path Cache)..."):
+    with st.spinner("Step 1: Instantiating Docling Layout Parsers with Explicit User-Writable Paths..."):
         try:
-            # Safely trap the file stream structure on transient drive volumes
+            # Trap the uploaded stream footprint inside transient volume paths safely
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                 tmp.write(uploaded_file.getvalue())
                 tmp_path = tmp.name
 
-            # Run layout-aware raw document parsing engine safely
-            converter = DocumentConverter()
+            # ==================================================================
+            # ADVANCED DEFENSE: PROGRAMMATIC INJECTION OF CACHE ARGS INTO DOCLING
+            # ==================================================================
+            # Force Docling's specific OCR choices to point to user-writable space
+            pipeline_options = PdfPipelineOptions()
+            pipeline_options.ocr_options.ocr_engine = OcrOptions().ocr_engine # Use default fallback engine
+            
+            # Explicitly lock down formatting converters using pipeline option mappings
+            converter = DocumentConverter(
+                format_options={
+                    InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+                }
+            )
+            
             conversion_output = converter.convert(tmp_path)
             markdown_payload = conversion_output.document.export_to_markdown()
             
-            st.success("✅ Layout structural elements indexed safely!")
+            st.success("✅ Layout structural tables indexed safely using customized writable path overrides!")
             
-            # Subdivide text components into processing chunks
+            # Subdivide heavy text components into processing segments
             splitter = RecursiveCharacterTextSplitter(chunk_size=4000, chunk_overlap=400)
             text_fragments = splitter.split_text(markdown_payload)
             
-            # Connect LangChain mapping instances to Groq
+            # Connect LangChain mapping instances to Groq Mesh
             st.caption("🔄 Spawning schema-enforced processing workers over Groq Inference Mesh...")
             llm_router = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, api_key=groq_api_key)
             structured_extractor = llm_router.with_structured_output(SeatMatrixExtraction)
             
             prompt_blueprint = ChatPromptTemplate.from_messages([
-                ("system", """You are a legal/tabular document translation parser. 
+                ("system", """You are a tabular document translation parser. 
                 Convert raw engineering seat text grids into clear structured records.
                 
                 CRITICAL EXTRACTION DIRECTIVES:
                 1. Identify 'college_name' precisely. Do not truncate strings.
-                2. If address attributes mention tokens like 'BANGALORE', map that cleanly to the city property.
-                3. If an explicit column cell property can't be found anywhere within the text, return null for that attribute.
+                2. If address attributes mention tokens like 'BANGALORE' or 'BENGALORE', map that cleanly to the city property.
+                3. If an explicit column cell property can't be found anywhere within the text context, return null for that attribute.
                 4. Set 'intake_year' explicitly to {year} for all individual records parsed.
                 """),
                 ("user", "Extract data elements from this segment context block:\n\n{text_fragment}")
@@ -153,7 +168,7 @@ if st.button("Execute Extraction & Sync Pipeline") and uploaded_file:
                     if target_column not in final_extracted_df.columns:
                         final_extracted_df[target_column] = None
                 
-                # Strict structural index configuration sorting
+                # Strict structural index configuration sorting matching your schema rules
                 final_extracted_df = final_extracted_df[[
                     "college_name", "city", "district", "address", "dept", "intake", "intake_year"
                 ]]
@@ -161,13 +176,13 @@ if st.button("Execute Extraction & Sync Pipeline") and uploaded_file:
                 # Save data directly down into relational table architectures
                 save_dataframe_to_sqlite(final_extracted_df)
                 
-                # Sync dataframe parameters cleanly across memory states
+                # Sync dataframe parameters cleanly across global application states
                 st.session_state["shared_dataframe"] = final_extracted_df
                 
-                st.success(f"🎉 Pipeline execution success! Synced {len(final_extracted_df)} rows directly into local database tables.")
+                st.success(f"🎉 Pipeline execution success! Synced {len(final_extracted_df)} rows directly into 'matrix_records.db'.")
                 st.dataframe(final_extracted_df, use_container_width=True)
                 
-                # Expose ad-hoc local download handlers
+                # Expose local download download handlers
                 csv_download_payload = final_extracted_df.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     label="📥 Download Extracted Matrix Register as CSV",
@@ -176,9 +191,10 @@ if st.button("Execute Extraction & Sync Pipeline") and uploaded_file:
                     mime="text/csv"
                 )
             else:
-                st.error("⚠️ Document analysis run complete, but zero rows matched structural criteria models.")
+                st.error("⚠️ Document analysis run complete, but zero rows matched the required structural target criteria.")
                 
             os.unlink(tmp_path)
             
         except Exception as system_error:
             st.error(f"💥 Processing Engine Core Error Interruption: {str(system_error)}")
+            st.info("Ensure your Groq API Token parameters are active and valid.")
