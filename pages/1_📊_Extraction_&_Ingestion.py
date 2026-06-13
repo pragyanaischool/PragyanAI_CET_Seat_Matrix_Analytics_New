@@ -38,12 +38,12 @@ def render_ingestion_portal():
         layout="wide"
     )
 
-    st.title("📊 Enterprise Ingestion & Sanitization Engine")
+    st.title("PragyanAI Enterprise Ingestion & Sanitization Engine")
     st.subheader("Process seat matrix documentation while automatically isolating rows and removing unmapped layout noise.")
     st.markdown("---")
 
     # 1. Page Header Branding UI Block
-    st.title("📊 Enterprise Ingestion & Sanitization Engine")
+    st.title("PragyanAI Enterprise Ingestion & Sanitization Engine")
     st.subheader("Process seat matrix documentation while automatically isolating rows and removing unmapped layout noise.")
     st.markdown("---")
 
@@ -51,7 +51,7 @@ def render_ingestion_portal():
     col_w1, col_w2 = st.columns([1, 2])
     
     with col_w1:
-        st.markdown("#### 📅 Horizon Configuration")
+        st.markdown("#### Horizon Configuration")
         target_year = st.selectbox(
             "Assign Academic Intake Target Year Profile:",
             options=[2024, 2025, 2026, 2027],
@@ -60,7 +60,7 @@ def render_ingestion_portal():
         )
         
     with col_w2:
-        st.markdown("#### 🔌 Ingestion Input Mode")
+        st.markdown("#### Ingestion Input Mode")
         input_channel = st.radio(
             "Select Document Source Input Stream Channel:",
             options=["Binary File Upload Desktop Interface", "Raw Text Buffer Clipboard Injection Desk"],
@@ -104,7 +104,7 @@ def render_ingestion_portal():
         )
 
     # 4. Pipeline Execution & Sanitization Trigger
-    if st.button(f"🚀 Execute Ingestion & Deduplication Pipeline", type="primary", use_container_width=True):
+    if st.button(f" Execute Ingestion & Deduplication Pipeline", type="primary", use_container_width=True):
         if not raw_normalized_text_dump.strip():
             st.warning("Execution Halted: No acceptable raw textual context metadata or document streams were found.")
             return
@@ -112,17 +112,17 @@ def render_ingestion_portal():
         with st.status("Executing Multi-Stage Data Sanitization Pipeline...", expanded=True) as status_block:
             try:
                 # Stage A: Run Regex-LLM parsing structures
-                status_block.write("🔄 *Phase [1/3]: Running state-machine layout matching checks...*")
+                status_block.write(" *Phase [1/3]: Running state-machine layout matching checks...*")
                 parser_engine = CETSeatMatrixParser()
                 
                 # The updated parser engine runs built-in deduplication before returning the DataFrame
                 sanitized_df = parser_engine.parse_text_stream(raw_normalized_text_dump, target_year)
                 
                 # Stage B: Check validation and data density bounds
-                status_block.write("🔮 *Phase [2/3]: Filtering unmapped rows and structural text-wraps...*")
+                status_block.write(" *Phase [2/3]: Filtering unmapped rows and structural text-wraps...*")
 
                 if sanitized_df is not None and not sanitized_df.empty:
-                    status_block.write("💾 *Phase [3/3]: Synchronizing unique records with local SQLite data lake...*")
+                    status_block.write(" *Phase [3/3]: Synchronizing unique records with local SQLite data lake...*")
                     
                     # Commit deduplicated record rows into persistence layers
                     save_matrix_records(sanitized_df)
@@ -131,7 +131,7 @@ def render_ingestion_portal():
                     status_block.update(label="🎉 Relational Matrix Extraction and Deduplication Complete!", state="complete")
                     
                     # 5. Render Post-Extraction Metrics Telemetry Dashboard
-                    st.markdown("### 📊 Cleaning & Deduplication Telemetry")
+                    st.markdown("###  Cleaning & Deduplication Telemetry")
                     
                     m_col1, m_col2, m_col3 = st.columns(3)
                     with m_col1:
@@ -145,7 +145,7 @@ def render_ingestion_portal():
                     st.success(f"Successfully processed **{file_display_name}** for Academic Year {target_year}! Null fields and layout-echo duplicates were stripped automatically.")
                     
                     # Render sanitized data frame viewport preview
-                    with st.expander("👁️ Review Clean relational Database Records", expanded=True):
+                    with st.expander(" Review Clean relational Database Records", expanded=True):
                         st.dataframe(
                             sanitized_df,
                             use_container_width=True,
