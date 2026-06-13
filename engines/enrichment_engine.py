@@ -8,7 +8,6 @@ from langchain_community.utilities import WikipediaAPIWrapper
 from langchain_community.utilities import SerpAPIWrapper
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain_groq import ChatGroq
-from langchain_openai import ChatOpenAI
 
 class CollegeEnrichmentEngine:
     """
