@@ -1,35 +1,35 @@
 import io
 import pandas as pd
-from pypdf import PdfReader
+import pdfplumber
 from docx import Document
 
 class PragyanDocumentExtractor:
     """
-    A unified document abstraction layer for the PragyanAI pipeline.
-    Ingests binary streams from PDF, Word, Excel, and CSV files, then normalizes 
-    and flattens them into plaintext layouts structured for the downstream parser.
+    Unified ingestion utility for PragyanAI's analytics pipeline.
+    Streams binary file buffers (PDF, DOCX, XLSX, CSV) into memory and flattens
+    them into standardized text dumps while meticulously preserving tabular alignment.
     """
     
     @staticmethod
     def extract_to_text_stream(file_bytes: bytes, file_name: str) -> str:
         """
-        Decouples incoming file uploads based on their extension signatures
-        and routes them to format-specific plaintext extractors.
+        Decouples incoming binary uploads based on their extension signatures
+        and routes them to format-specific extraction engines.
         
         Parameters:
-            file_bytes (bytes): Raw binary data from the uploaded file.
-            file_name (str): The name of the file used to extract the extension type.
+            file_bytes (bytes): Raw binary payload from the file stream.
+            file_name (str): Original string name of the file to slice the extension tracker.
             
         Returns:
-            str: A unified, newline-separated text stream.
+            str: Normalized, newline-separated textual matrix context.
         """
         if not file_name or "." not in file_name:
-            raise ValueError("Invalid file structure: Missing explicit extension name signature.")
+            raise ValueError("Invalid document reference: Missing explicit format extension suffix.")
             
         ext = file_name.split(".")[-1].lower()
         
         if ext == "pdf":
-            return PragyanDocumentExtractor._extract_pdf(file_bytes)
+            return PragyanDocumentExtractor._extract_pdf_with_layout(file_bytes)
         elif ext in ["xlsx", "xls"]:
             return PragyanDocumentExtractor._extract_spreadsheet(file_bytes)
         elif ext == "csv":
@@ -37,62 +37,60 @@ class PragyanDocumentExtractor:
         elif ext in ["docx", "doc"]:
             return PragyanDocumentExtractor._extract_docx(file_bytes)
         else:
-            raise ValueError(f"Pipeline Ingestion Aborted: Unsupported file format extension: .{ext}")
+            raise ValueError(f"Ingestion Core Aborted: Unsupported file format specification: .{ext}")
 
     @staticmethod
-    def _extract_pdf(file_bytes: bytes) -> str:
+    def _extract_pdf_with_layout(file_bytes: bytes) -> str:
         """
-        Reads PDF objects page by page, aggregates localized text layers,
-        and strings them together into sequential text boundaries.
+        Extracts textual matrices using pdfplumber's spatial alignment parameters.
+        Preserves structural column spaces, resolving layout signature clipping.
         """
         try:
-            reader = PdfReader(io.BytesIO(file_bytes))
             text_accum = []
-            
-            for page_idx, page in enumerate(reader.pages):
-                page_text = page.extract_text()
-                if page_text:
-                    # Injecting a synthetic page boundary trace for easier debugging
-                    text_accum.append(f"\n--- PAGE {page_idx + 1} ---\n{page_text}")
-                    
+            # Open binary array objects completely in-memory using byte-streams
+            with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                for page_idx, page in enumerate(pdf.pages):
+                    # layout=True forces the engine to preserve structural gaps across columns,
+                    # mimicking the visual table structure of the original government document
+                    page_text = page.extract_text(layout=True)
+                    if page_text:
+                        text_accum.append(f"\n--- PAGE {page_idx + 1} ---\n{page_text}")
+                        
             return "\n".join(text_accum)
         except Exception as e:
-            raise RuntimeError(f"Error parsing PDF layout binaries: {str(e)}")
+            raise RuntimeError(f"Advanced PDF Layout Extraction Hub failed to parse pages: {str(e)}")
 
     @staticmethod
     def _extract_docx(file_bytes: bytes) -> str:
         """
-        Extracts textual layouts from Microsoft Word files.
-        Processes standard body text segments and iterates through rows
-        inside any embedded native layout tables.
+        Extracts parameters from Microsoft Word documents. 
+        Iterates across core body text blocks and embedded tabular grids.
         """
         try:
             doc = Document(io.BytesIO(file_bytes))
             text_accum = []
             
-            # 1. Process standard layout text paragraphs
+            # 1. Capture standard body paragraphs
             for paragraph in doc.paragraphs:
                 if paragraph.text.strip():
                     text_accum.append(paragraph.text.strip())
                     
-            # 2. Extract and format grid alignments inside native DOCX tables
+            # 2. Flatten document table cells using distinct divider pipelines (|)
             for table in doc.tables:
                 for row in table.rows:
-                    # Join individual table columns using clean string pipeline symbols
                     row_data = " | ".join([cell.text.strip() for cell in row.cells if cell.text.strip()])
                     if row_data:
                         text_accum.append(row_data)
                         
             return "\n".join(text_accum)
         except Exception as e:
-            raise RuntimeError(f"Error extracting structural elements from DOCX: {str(e)}")
+            raise RuntimeError(f"Advanced DOCX Extraction Framework encountered error: {str(e)}")
 
     @staticmethod
     def _extract_spreadsheet(file_bytes: bytes) -> str:
         """
-        Parses multi-sheet Excel workbooks. Loops through all visible sheets, 
-        maps row frames into structured layout objects, and exports them 
-        using space-separated layouts.
+        Iterates over multi-sheet Excel books. Parses row values 
+        and outputs space-separated representations.
         """
         try:
             excel_file = pd.ExcelFile(io.BytesIO(file_bytes))
@@ -100,29 +98,28 @@ class PragyanDocumentExtractor:
             
             for sheet_name in excel_file.sheet_names:
                 df = excel_file.parse(sheet_name)
-                
-                # Drop rows where every single index column contains NaN data values
+                # Drop structural index lines where every variable contains null data values
                 df = df.dropna(how='all')
                 
                 if not df.empty:
-                    # Convert to string format while keeping space alignments intact
+                    # Export cell tracks using a unified single-space delimiter alignment configuration
                     serialized_sheet = df.to_csv(index=False, sep=" ")
                     text_accum.append(f"\n--- SHEET: {sheet_name} ---\n{serialized_sheet}")
                     
             return "\n".join(text_accum)
         except Exception as e:
-            raise RuntimeError(f"Error normalizing Excel spreadsheet frames: {str(e)}")
+            raise RuntimeError(f"Workbook Extraction Subsystems failed to serialize sheets: {str(e)}")
 
     @staticmethod
     def _extract_csv(file_bytes: bytes) -> str:
         """
-        Directly reads unstructured comma-separated variables, isolates data blocks,
-        and sanitizes cell properties into standardized text frames.
+        Directly reads unformatted comma-separated entries, strips formatting artifacts,
+        and translates rows into space-delimited text blocks.
         """
         try:
-            # Using basic automatic fallback engines to prevent encoding violations
             df = pd.read_csv(io.BytesIO(file_bytes), encoding='utf-8', on_bad_lines='skip')
             df = df.dropna(how='all')
             return df.to_csv(index=False, sep=" ")
         except Exception as e:
-            raise RuntimeError(f"Error streaming direct CSV data lines: {str(e)}")
+            raise RuntimeError(f"CSV Line Data Ingestion stream exception hit: {str(e)}")
+            
