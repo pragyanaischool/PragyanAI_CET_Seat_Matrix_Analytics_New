@@ -17,7 +17,7 @@ except ImportError:
     IBMDoclingConverter = None
 
 # ==============================================================================
-# 📋 1. DEFINE TARGET DATA STRUCTURE (Pydantic - Preserved from Workspace)
+# 📋 1. TARGET DATA STRUCTURE SPECIFICATION (Pydantic Parameters)
 # ==============================================================================
 class SeatMatrixRecord(BaseModel):
     """
@@ -63,28 +63,27 @@ class SeatMatrixExtraction(BaseModel):
 
 
 # ==============================================================================
-# 🚀 2. THE PIPELINE ORCHESTRATOR CLASS (With Adaptive Cascade Failover)
+# 🚀 2. HIGH-THROUGHPUT PURE GROQ CASCADING FAILOVER ORCHESTRATOR
 # ==============================================================================
 class PragyanEnsembleParser:
     """
-    High-Throughput Multi-LLM Cross-Provider Cascading Failover Ingestion Engine.
-    Unifies your original Colab extraction prompt instructions with dynamic multi-provider 
-    routing logic and adaptive jitter backoffs to survive high-volume API rate limits.
+    High-Throughput Pure Groq Multi-LLM Cascading Failover Ingestion Engine.
+    Routes document processing fragments strictly across alternative native Groq instances,
+    combining fast structured outputs with adaptive jitter backoffs to survive rate limits.
     """
     def __init__(self, groq_api_key: Optional[str] = None):
-        # Resolve key token from parameter injection fallback to system environment definitions
+        # Resolve the API key token safely from method parameters or server environments
         self.api_key = groq_api_key or os.getenv("GROQ_API_KEY", "")
         
-        # 🎯 User-Requested 5-Tier Cross-Provider Cascade Pool
+        # 🎯 Dynamic Multi-Tier Pure Groq Cascade Configuration Pool
         self.cascade_pool = [
-            {"provider": "groq", "name": "llama-3.1-8b-instant"},
-            {"provider": "groq", "name": "llama-3.3-70b-versatile"},
-            {"provider": "openai-oss", "name": "openai/gpt-oss-120b"},
-            {"provider": "openai-oss", "name": "openai/gpt-oss-20b"},
-            {"provider": "qwen", "name": "qwen/qwen3-32b"}
+            {"name": "llama-3.3-70b-versatile"},
+            {"name": "llama-3.1-8b-instant"},
+            {"name": "llama3-70b-8192"},
+            {"name": "llama3-8b-8192"}
         ]
         
-        # Original Colab Instruction Prompt Framework Mapped Intact
+        # Original instruction prompts mapped directly from your testing canvas
         self.prompt_template = ChatPromptTemplate.from_messages([
             ("system", (
                 "You are an expert data extraction assistant. Your task is to extract structured tabular information "
@@ -100,43 +99,23 @@ class PragyanEnsembleParser:
 
     def _get_structured_extractor(self, model_meta: dict):
         """
-        Instantiates specific provider clients dynamically.
-        Imports ChatOpenAI defensively inline to circumvent runtime container environment issues.
+        Instantiates specific native Groq provider models dynamically.
+        Binds your Pydantic extraction template using structured output layers.
         """
-        provider = model_meta["provider"]
         model_name = model_meta["name"]
         
-        if provider == "groq":
-            llm = ChatGroq(
-                model=model_name, 
-                temperature=0, 
-                api_key=self.api_key, 
-                max_tokens=4096
-            )
-            return llm.with_structured_output(SeatMatrixExtraction)
-        else:
-            try:
-                from langchain_openai import ChatOpenAI
-                custom_base_url = os.getenv("OPEN_OSS_BASE_URL", "https://api.openai.com/v1")
-                custom_api_key = os.getenv("OPEN_OSS_API_KEY", self.api_key)
-                
-                llm = ChatOpenAI(
-                    model_name=model_name, 
-                    temperature=0, 
-                    max_tokens=4096, 
-                    openai_api_base=custom_base_url, 
-                    openai_api_key=custom_api_key
-                )
-                return llm.with_structured_output(SeatMatrixExtraction)
-            except ImportError:
-                print(f"    [!] Packaged provider interface tracking missing. Falling back to primary Groq engine for {model_name}...")
-                llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, api_key=self.api_key, max_tokens=4096)
-                return llm.with_structured_output(SeatMatrixExtraction)
+        llm = ChatGroq(
+            model=model_name, 
+            temperature=0,  # Zero-temp guarantees deterministic extraction metrics
+            api_key=self.api_key, 
+            max_tokens=4096
+        )
+        return llm.with_structured_output(SeatMatrixExtraction)
 
     def _invoke_cascade_broker(self, chunk: str) -> Optional[SeatMatrixExtraction]:
         """
-        Loops through the multi-LLM model pool with exponential backoff and random jitter 
-        to maximize data retention across large-scale document pipelines.
+        Loops through pure Groq models with exponential backoff and random jitter
+        the moment a rate limit exception (429, TPM, or TPD exhaustion) is intercepted.
         """
         formatted_messages = self.prompt_template.format_messages(text_chunk=chunk)
         base_delay = 2.0  
@@ -155,30 +134,30 @@ class PragyanEnsembleParser:
                         return result
                 except Exception as e:
                     err_msg = str(e)
-                    # Intercept rate limit exhaustion signatures safely (429, TPM, TPD restrictions)
+                    # Intercept rate limit exhaustion parameters safely 
                     if any(k in err_msg or k in err_msg.lower() for k in ["429", "rate_limit", "limit reached", "quota", "overloaded"]):
                         retries += 1
                         sleep_duration = (base_delay ** retries) + random.uniform(0.5, 1.5)
-                        print(f"    [!] Rate Limit hit for [{model_name}]. Retry {retries}/{max_retries}. Sleeping for {sleep_duration:.2f}s...")
+                        print(f"    [!] Groq Rate Limit hit for [{model_name}]. Retry {retries}/{max_retries}. Sleeping for {sleep_duration:.2f}s...")
                         time.sleep(sleep_duration)
                         continue
                     else:
-                        print(f"    [!] Non-rate exception hit on model tier [{model_name}]: {err_msg}")
-                        break # Immediately step down cascade layer on severe model parameter mismatches
+                        print(f"    [!] Critical Exception hit on current Groq model layer [{model_name}]: {err_msg}")
+                        break  # Fall straight to the next Groq alternative on critical structure failures
             
-            print(f"    [!] Model tier [{model_name}] completely exhausted or rate-limited. Cascading down chain...")
+            print(f"    [!] Groq Model tier [{model_name}] completely exhausted. Cascading down cluster pool...")
 
-        # Ultimate Safe Guard Layer
-        print("    [⚠️] CRITICAL: Entire multi-provider cascade pool exhausted. Injecting emergency jitter sleep...")
+        # Ultimate Safe Guard Layer: Triggered if all primary allocation pools hit resource ceilings
+        print("    [⚠️] CRITICAL: Entire pure Groq cascade pool rate-limited. Forcing 6s emergency cooldown sleep...")
         time.sleep(6.0 + random.uniform(0.5, 1.5))
         
-        emergency_extractor = self._get_structured_extractor({"provider": "groq", "name": "llama-3.3-70b-versatile"})
+        emergency_extractor = self._get_structured_extractor({"name": "llama-3.3-70b-versatile"})
         return emergency_extractor.invoke(formatted_messages)
 
     def parse_pdf_to_markdown(self, pdf_path_or_bytes) -> str:
         """
         Uses IBM Docling to convert layout-complex PDFs into semantic Markdown.
-        Handles both file-system paths and raw binary arrays smoothly.
+        Handles both file paths and binary streams concurrently without execution stops.
         """
         if isinstance(pdf_path_or_bytes, bytes):
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
@@ -198,7 +177,7 @@ class PragyanEnsembleParser:
                 markdown_text = result.document.export_to_markdown()
                 print("[+] PDF parsed successfully!")
             else:
-                print("[!] Error: IBM Docling package is missing or uninstalled inside runtime wheels.")
+                print("[!] Error: IBM Docling package is uninstalled inside this environment layout.")
         except Exception as e:
             print(f"[!] Critical Error during Docling conversion layer: {str(e)}")
         finally:
@@ -222,7 +201,7 @@ class PragyanEnsembleParser:
         all_extracted_records = []
 
         for i, chunk in enumerate(chunks):
-            # FIXED: Removed chunk-filtering optimizations to evaluate all segments exactly like the working Colab file
+            # Evaluates all segments exactly like the working Colab canvas file
             print(f"    -> Extracting chunk {i+1}/{len(chunks)}...")
             try:
                 extraction_result = self._invoke_cascade_broker(chunk)
@@ -244,7 +223,7 @@ class PragyanEnsembleParser:
     def analyze_and_extract_matrix(self, file_bytes: bytes, intake_year: int) -> pd.DataFrame:
         """
         Streamlit Interface Adapter Pipeline Core.
-        Processes raw document binary bytes through extraction loops and returns structured dataframes.
+        Processes raw document binary bytes through extraction loops and returns structures.
         """
         if not self.api_key:
             raise ValueError("Groq API key missing. Initialize with key or export GROQ_API_KEY tokens.")
@@ -299,4 +278,3 @@ if __name__ == "__main__":
     
     pipeline = PragyanEnsembleParser()
     pipeline.run(PDF_FILE_PATH, OUTPUT_CSV_PATH, intake_year=2024)
-            
