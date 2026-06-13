@@ -67,21 +67,24 @@ class SeatMatrixExtraction(BaseModel):
 # ==============================================================================
 class PragyanEnsembleParser:
     """
-    High-Throughput Pure Groq Multi-LLM Cascading Failover Ingestion Engine.
-    Combines your original PDFToCSVPipeline structural logic with multi-tier backoff 
-    protection to handle high-volume text chunk loads seamlessly without API drops.
+    High-Throughput Multi-LLM Cross-Provider Cascading Failover Ingestion Engine.
+    Unifies your original Colab extraction prompt instructions with dynamic multi-provider 
+    routing logic and adaptive jitter backoffs to survive high-volume API rate limits.
     """
     def __init__(self, groq_api_key: Optional[str] = None):
+        # Resolve key token from parameter injection fallback to system environment definitions
         self.api_key = groq_api_key or os.getenv("GROQ_API_KEY", "")
         
-        # 🎯 Dynamic Multi-Tier Groq Cascade Model Pool 
+        # 🎯 User-Requested 5-Tier Cross-Provider Cascade Pool
         self.cascade_pool = [
-            {"name": "llama-3.3-70b-versatile"},
-            {"name": "llama-3.1-8b-instant"},
-            {"name": "llama3-70b-8192"},
-            {"name": "llama3-8b-8192"}
+            {"provider": "groq", "name": "llama-3.1-8b-instant"},
+            {"provider": "groq", "name": "llama-3.3-70b-versatile"},
+            {"provider": "openai-oss", "name": "openai/gpt-oss-120b"},
+            {"provider": "openai-oss", "name": "openai/gpt-oss-20b"},
+            {"provider": "qwen", "name": "qwen/qwen3-32b"}
         ]
         
+        # Original Colab Instruction Prompt Framework Mapped Intact
         self.prompt_template = ChatPromptTemplate.from_messages([
             ("system", (
                 "You are an expert data extraction assistant. Your task is to extract structured tabular information "
@@ -95,23 +98,49 @@ class PragyanEnsembleParser:
             ("user", "Here is a section of the parsed seat matrix document:\n\n{text_chunk}\n\nExtract all records.")
         ])
 
-    def _get_structured_extractor(self, model_name: str):
-        llm = ChatGroq(
-            model=model_name,
-            temperature=0,  
-            api_key=self.api_key,
-            max_tokens=4096
-        )
-        return llm.with_structured_output(SeatMatrixExtraction)
+    def _get_structured_extractor(self, model_meta: dict):
+        """
+        Instantiates specific provider clients dynamically.
+        Imports ChatOpenAI defensively inline to circumvent runtime container environment issues.
+        """
+        provider = model_meta["provider"]
+        model_name = model_meta["name"]
+        
+        if provider == "groq":
+            llm = ChatGroq(
+                model=model_name, 
+                temperature=0, 
+                api_key=self.api_key, 
+                max_tokens=4096
+            )
+            return llm.with_structured_output(SeatMatrixExtraction)
+        else:
+            try:
+                from langchain_openai import ChatOpenAI
+                custom_base_url = os.getenv("OPEN_OSS_BASE_URL", "https://api.openai.com/v1")
+                custom_api_key = os.getenv("OPEN_OSS_API_KEY", self.api_key)
+                
+                llm = ChatOpenAI(
+                    model_name=model_name, 
+                    temperature=0, 
+                    max_tokens=4096, 
+                    openai_api_base=custom_base_url, 
+                    openai_api_key=custom_api_key
+                )
+                return llm.with_structured_output(SeatMatrixExtraction)
+            except ImportError:
+                print(f"    [!] Packaged provider interface tracking missing. Falling back to primary Groq engine for {model_name}...")
+                llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, api_key=self.api_key, max_tokens=4096)
+                return llm.with_structured_output(SeatMatrixExtraction)
 
     def _invoke_cascade_broker(self, chunk: str) -> Optional[SeatMatrixExtraction]:
         """
         Loops through the multi-LLM model pool with exponential backoff and random jitter 
-        to survive rate limits (429) during massive extraction pipelines.
+        to maximize data retention across large-scale document pipelines.
         """
         formatted_messages = self.prompt_template.format_messages(text_chunk=chunk)
         base_delay = 2.0  
-        max_retries = 4
+        max_retries = 3
         
         for idx, model_meta in enumerate(self.cascade_pool):
             retries = 0
@@ -119,32 +148,38 @@ class PragyanEnsembleParser:
             
             while retries < max_retries:
                 try:
-                    structured_extractor = self._get_structured_extractor(model_name)
+                    structured_extractor = self._get_structured_extractor(model_meta)
                     result = structured_extractor.invoke(formatted_messages)
                     
                     if result and isinstance(result, SeatMatrixExtraction):
                         return result
                 except Exception as e:
                     err_msg = str(e)
+                    # Intercept rate limit exhaustion signatures safely (429, TPM, TPD restrictions)
                     if any(k in err_msg or k in err_msg.lower() for k in ["429", "rate_limit", "limit reached", "quota", "overloaded"]):
                         retries += 1
                         sleep_duration = (base_delay ** retries) + random.uniform(0.5, 1.5)
-                        print(f"    [!] Rate Limit caught for [{model_name}]. Retry {retries}/{max_retries}. Sleeping for {sleep_duration:.2f}s...")
+                        print(f"    [!] Rate Limit hit for [{model_name}]. Retry {retries}/{max_retries}. Sleeping for {sleep_duration:.2f}s...")
                         time.sleep(sleep_duration)
                         continue
                     else:
-                        print(f"    [!] Non-rate exception hit on model layer [{model_name}]: {err_msg}")
-                        raise e
+                        print(f"    [!] Non-rate exception hit on model tier [{model_name}]: {err_msg}")
+                        break # Immediately step down cascade layer on severe model parameter mismatches
             
             print(f"    [!] Model tier [{model_name}] completely exhausted or rate-limited. Cascading down chain...")
 
-        print("    [⚠️] CRITICAL: Entire Groq cascade pool rate-limited. Forcing emergency jitter sleep...")
-        time.sleep(8.0 + random.uniform(1.0, 3.0))
+        # Ultimate Safe Guard Layer
+        print("    [⚠️] CRITICAL: Entire multi-provider cascade pool exhausted. Injecting emergency jitter sleep...")
+        time.sleep(6.0 + random.uniform(0.5, 1.5))
         
-        emergency_extractor = self._get_structured_extractor("llama-3.3-70b-versatile")
+        emergency_extractor = self._get_structured_extractor({"provider": "groq", "name": "llama-3.3-70b-versatile"})
         return emergency_extractor.invoke(formatted_messages)
 
     def parse_pdf_to_markdown(self, pdf_path_or_bytes) -> str:
+        """
+        Uses IBM Docling to convert layout-complex PDFs into semantic Markdown.
+        Handles both file-system paths and raw binary arrays smoothly.
+        """
         if isinstance(pdf_path_or_bytes, bytes):
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
                 temp_pdf.write(pdf_path_or_bytes)
@@ -162,6 +197,8 @@ class PragyanEnsembleParser:
                 result = converter.convert(absolute_path)
                 markdown_text = result.document.export_to_markdown()
                 print("[+] PDF parsed successfully!")
+            else:
+                print("[!] Error: IBM Docling package is missing or uninstalled inside runtime wheels.")
         except Exception as e:
             print(f"[!] Critical Error during Docling conversion layer: {str(e)}")
         finally:
@@ -171,6 +208,9 @@ class PragyanEnsembleParser:
         return markdown_text
 
     def extract_structured_data(self, markdown_text: str, intake_year: int = 2024) -> List[SeatMatrixRecord]:
+        """
+        Splits Markdown text into chunks and processes them via the multi-LLM cascading broker.
+        """
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=4000, 
             chunk_overlap=500,
@@ -182,9 +222,7 @@ class PragyanEnsembleParser:
         all_extracted_records = []
 
         for i, chunk in enumerate(chunks):
-            if "COURSE NAME" not in chunk.upper() and "INTAKE" not in chunk.upper() and len(chunk.strip()) < 120:
-                continue
-                
+            # FIXED: Removed chunk-filtering optimizations to evaluate all segments exactly like the working Colab file
             print(f"    -> Extracting chunk {i+1}/{len(chunks)}...")
             try:
                 extraction_result = self._invoke_cascade_broker(chunk)
@@ -204,14 +242,19 @@ class PragyanEnsembleParser:
         return all_extracted_records
 
     def analyze_and_extract_matrix(self, file_bytes: bytes, intake_year: int) -> pd.DataFrame:
+        """
+        Streamlit Interface Adapter Pipeline Core.
+        Processes raw document binary bytes through extraction loops and returns structured dataframes.
+        """
         if not self.api_key:
-            raise ValueError("Groq API key missing.")
+            raise ValueError("Groq API key missing. Initialize with key or export GROQ_API_KEY tokens.")
             
         markdown_text = self.parse_pdf_to_markdown(file_bytes)
         if not markdown_text.strip():
             return pd.DataFrame()
             
         records = self.extract_structured_data(markdown_text, intake_year)
+        
         raw_list_of_dicts = [record.model_dump() for record in records]
         df = pd.DataFrame(raw_list_of_dicts)
         
@@ -221,8 +264,15 @@ class PragyanEnsembleParser:
         return df
 
     def run(self, pdf_path: str, output_csv_path: str, intake_year: int = 2024):
+        """
+        Command-Line / Google Colab Interface Execution Block.
+        """
         if not self.api_key:
+            print("[!] Warning: GROQ_API_KEY environment variable is not set.")
             self.api_key = input("Enter Groq API Key: ").strip()
+            if not self.api_key:
+                print("[!] Cancelled. Missing API key tokens.")
+                return
 
         markdown_text = self.parse_pdf_to_markdown(pdf_path)
         records = self.extract_structured_data(markdown_text, intake_year)
@@ -236,4 +286,17 @@ class PragyanEnsembleParser:
             df = df.reindex(columns=columns_order)
             df.to_csv(output_csv_path, index=False)
             print(f"[✓] Data pipeline run completed! File saved to: {output_csv_path}")
+        else:
+            print("[!] Pipeline completed but no valid records were extracted.")
+
+
+# ==============================================================================
+# 3. DIRECT COHESIVE INSTANTIATION BLOCK (Colab Mode Safety Wrapper)
+# ==============================================================================
+if __name__ == "__main__":
+    PDF_FILE_PATH = "seat_matrix2052024kannada.pdf"  
+    OUTPUT_CSV_PATH = "seat_matrix_extracted.csv"
+    
+    pipeline = PragyanEnsembleParser()
+    pipeline.run(PDF_FILE_PATH, OUTPUT_CSV_PATH, intake_year=2024)
             
