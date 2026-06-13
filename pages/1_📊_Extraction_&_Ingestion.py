@@ -3,167 +3,113 @@ import os
 import sys
 
 # ==============================================================================
-# 🎯 PATH PATCH & CACHE PROTECTION LAYER (FIX FOR IMPORT KEYERRORS)
+# 🎯 PATH PATCH & CACHE PROTECTION LAYER (PREVENTS INTERMITTENT KEYERRORS)
 # ==============================================================================
-# 1. Deduce the absolute root directory footprint paths
+# Resolve absolute path bounds to guarantee module accessibility
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-
-# 2. Inject parent root framework path into global execution lookup directories
 if root_path not in sys.path:
     sys.path.insert(0, root_path)
 
-# 3. FIX: Completely drop any cached or partial module instances to prevent KeyErrors
+# Flush out lingering cached runtime instances to eliminate cross-page import collisions
 for module_key in list(sys.modules.keys()):
     if (
         module_key.startswith("engines") 
         or module_key.startswith("database") 
         or "matrix_parser" in module_key
+        or "ensemble_orchestrator" in module_key
+        or "enrichment_engine" in module_key
     ):
         sys.modules.pop(module_key, None)
 # ==============================================================================
 
-# Now completely safe to proceed with standard package references
 import pandas as pd
-from engines.document_extractor import PragyanDocumentExtractor
-from engines.matrix_parser import CETSeatMatrixParser
+from engines.ensemble_orchestrator import PragyanEnsembleParser
+from engines.enrichment_engine import PragyanMatrixEnricher
 from database.db_handler import save_matrix_records
 
 def render_ingestion_portal():
+    """
+    Main Ingestion View Portal for PragyanAI.
+    Combines multi-engine layout extraction layers and entity enrichment 
+    to guarantee clean row multiplication metrics without signature drops.
+    """
     st.set_page_config(
-        page_title="PragyanAI Ingestion Portal",
-        page_icon="📊",
+        page_title="PragyanAI Ingestion Portal", 
+        page_icon="📊", 
         layout="wide"
     )
-
-    st.title("PragyanAI Enterprise Ingestion & Sanitization Engine")
-    st.subheader("Process seat matrix documentation while automatically isolating rows and removing unmapped layout noise.")
-    st.markdown("---")
-
-    # 1. Page Header Branding UI Block
-    st.title("PragyanAI Enterprise Ingestion & Sanitization Engine")
-    st.subheader("Process seat matrix documentation while automatically isolating rows and removing unmapped layout noise.")
-    st.markdown("---")
-
-    # 2. Control Layout Panel Widgets
-    col_w1, col_w2 = st.columns([1, 2])
     
-    with col_w1:
-        st.markdown("#### Horizon Configuration")
-        target_year = st.selectbox(
-            "Assign Academic Intake Target Year Profile:",
-            options=[2024, 2025, 2026, 2027],
-            index=2,
-            help="Select the exact calendar year to stamp and index these incoming institutional metrics."
-        )
-        
-    with col_w2:
-        st.markdown("#### Ingestion Input Mode")
-        input_channel = st.radio(
-            "Select Document Source Input Stream Channel:",
-            options=["Binary File Upload Desktop Interface", "Raw Text Buffer Clipboard Injection Desk"],
-            index=0,
-            horizontal=True
-        )
-
+    st.title("📊 Multi-Engine Layout Consensus Ingestion Core")
+    st.subheader("Process unpredictable seat allocation arrays while automatically tracking row-multiplied disciplines.")
     st.markdown("---")
 
-    raw_normalized_text_dump = ""
-    file_display_name = ""
-
-    # 3. Form Input Method Handling
-    if "Binary File Upload Desktop Interface" in input_channel:
+    # --- INPUT USER PANEL CONFIGURATIONS ---
+    col_uploader, col_horizon = st.columns([3, 1])
+    
+    with col_uploader:
         uploaded_file = st.file_uploader(
-            f"Drag and drop or browse local system files to clean for Academic Session {target_year}:",
-            type=["pdf", "xlsx", "xls", "csv", "docx", "doc"],
-            help="Accepts government seat matrix PDF records, compiled program spreadsheets, or word tables."
+            "Upload Official Government Seat Matrix Document (PDF)", 
+            type=["pdf"],
+            help="Upload the raw PDF layout. The engine will run concurrent extractions via Docling, pdfplumber, and PyMuPDF."
         )
         
-        if uploaded_file is not None:
-            file_display_name = uploaded_file.name
-            with st.spinner("Streaming binary layout vectors directly to memory buffers..."):
-                try:
-                    file_binary_payload = uploaded_file.read()
-                    # Route to ensemble AI parsing pipeline (Docling, Marker, Unstructured)
-                    raw_normalized_text_dump = PragyanDocumentExtractor.extract_to_text_stream(
-                        file_binary_payload, 
-                        file_display_name
-                    )
-                except Exception as ex:
-                    st.error(f"Ingestion Module Failure: File text layer extraction crashed: {str(ex)}")
-                    st.stop()
-    else:
-        file_display_name = f"Manual_Clipboard_Injection_{target_year}.txt"
-        raw_normalized_text_dump = st.text_area(
-            f"Paste Raw Unstructured Text String Block Context for Year {target_year} Here:",
-            height=300,
-            placeholder="Paste text matrix layout here...",
-            help="Directly inject copied console characters or unformatted terminal text outputs."
+    with col_horizon:
+        intake_year = st.selectbox(
+            "Target Academic Horizon Year", 
+            [2024, 2025, 2026], 
+            index=1,
+            help="Select the operational seat matrix year profile to allocate for relational time-series tracking."
         )
 
-    # 4. Pipeline Execution & Sanitization Trigger
-    if st.button(f" Execute Ingestion & Deduplication Pipeline", type="primary", use_container_width=True):
-        if not raw_normalized_text_dump.strip():
-            st.warning("Execution Halted: No acceptable raw textual context metadata or document streams were found.")
-            return
+    st.markdown("### ⚙️ Pipeline Control Framework")
+    
+    # Ingestion Pipeline Run Execution Block
+    if uploaded_file is not None:
+        file_bytes = uploaded_file.read()
+        
+        if st.button("🚀 Execute Multi-Engine Ingestion & Sanitization"):
+            
+            # 1. Pipeline Segment Alpha: Multi-Engine Concurrent Extraction
+            with st.spinner("⏳ Compiling multi-library text maps (IBM Docling Table Grids + Plumber + PyMuPDF)..."):
+                try:
+                    orchestrator = PragyanEnsembleParser()
+                    raw_extracted_df = orchestrator.analyze_and_extract_matrix(file_bytes, intake_year)
+                except Exception as extraction_err:
+                    st.error(f"❌ Critical Error during Ensemble Extraction Layer: {str(extraction_err)}")
+                    return
 
-        with st.status("Executing Multi-Stage Data Sanitization Pipeline...", expanded=True) as status_block:
-            try:
-                # Stage A: Run Regex-LLM parsing structures
-                status_block.write(" *Phase [1/3]: Running state-machine layout matching checks...*")
-                parser_engine = CETSeatMatrixParser()
-                
-                # The updated parser engine runs built-in deduplication before returning the DataFrame
-                sanitized_df = parser_engine.parse_text_stream(raw_normalized_text_dump, target_year)
-                
-                # Stage B: Check validation and data density bounds
-                status_block.write(" *Phase [2/3]: Filtering unmapped rows and structural text-wraps...*")
+            # 2. Pipeline Segment Beta: Cross-Validation & Text Enrichment Rails
+            with st.spinner("🧠 Running data healing rules (Standardizing geographics, abbreviations, and intake sanity filters)..."):
+                try:
+                    enricher = PragyanMatrixEnricher()
+                    clean_normalized_df = enricher.enrich_extracted_dataframe(raw_extracted_df)
+                except Exception as enrichment_err:
+                    st.error(f"❌ Critical Error during Post-Extraction Enrichment Layer: {str(enrichment_err)}")
+                    return
 
-                if sanitized_df is not None and not sanitized_df.empty:
-                    status_block.write(" *Phase [3/3]: Synchronizing unique records with local SQLite data lake...*")
-                    
-                    # Commit deduplicated record rows into persistence layers
-                    save_matrix_records(sanitized_df)
-                    
-                    # Close status panel as successfully finalized
-                    status_block.update(label="🎉 Relational Matrix Extraction and Deduplication Complete!", state="complete")
-                    
-                    # 5. Render Post-Extraction Metrics Telemetry Dashboard
-                    st.markdown("###  Cleaning & Deduplication Telemetry")
-                    
-                    m_col1, m_col2, m_col3 = st.columns(3)
-                    with m_col1:
-                        # Raw extraction length approximation before unique compression filters
-                        st.metric(label="Sanitized Data Matrix Size", value=f"{len(sanitized_df)} Rows")
-                    with m_col2:
-                        st.metric(label="Unique Campuses Extracted", value=f"{sanitized_df['college_name'].nunique()}")
-                    with m_col3:
-                        st.metric(label="Total Admitted Capacity Added", value=f"{sanitized_df['intake'].sum():,} Seats")
-                        
-                    st.success(f"Successfully processed **{file_display_name}** for Academic Year {target_year}! Null fields and layout-echo duplicates were stripped automatically.")
-                    
-                    # Render sanitized data frame viewport preview
-                    with st.expander(" Review Clean relational Database Records", expanded=True):
-                        st.dataframe(
-                            sanitized_df,
-                            use_container_width=True,
-                            hide_index=True,
-                            column_config={
-                                "college_name": "Institution Entity Name",
-                                "city": "City",
-                                "district": "District",
-                                "address": "Physical Verification Address",
-                                "dept": "Sanitized Engineering Discipline Track",
-                                "intake": st.column_config.NumberColumn("Allotted Intake", format="%d"),
-                                "intake_year": st.column_config.NumberColumn("Target Horizon Year", format="%d")
-                            }
-                        )
-                else:
-                    status_block.update(label="❌ Spatial Extraction Signature Violation Encountered.", state="error")
-                    st.error("The system failed to extract data rows. Check if your source file aligns with target matrix column signatures.")
-                    
-            except Exception as pipeline_err:
-                status_block.update(label="💥 Ingestion Pipeline Crash Interrupted Execution.", state="error")
-                st.error(f"Critical Parsing Exception Intercepted: {str(pipeline_err)}")
+            # 3. Pipeline Segment Gamma: Metrics Display and Relational Database Injection
+            if clean_normalized_df is not None and not clean_normalized_df.empty:
+                st.success(f"✅ Success! Extracted and verified {len(clean_normalized_df)} individual course-multiplied rows with zero signature drops!")
+                
+                # Render interactive high-density dataframe metrics display canvas
+                st.dataframe(
+                    clean_normalized_df.sort_values(by=['college_name', 'dept']).reset_index(drop=True), 
+                    use_container_width=True
+                )
+                
+                # Write back directly to localized persistent storage layer
+                with st.spinner("💾 Committing structured records matrix down to relational database data lake..."):
+                    try:
+                        save_matrix_records(clean_normalized_df)
+                        st.balloons()
+                        st.info("💾 Operations Log: Target matrices committed and validated inside the local storage infrastructure successfully.")
+                    except Exception as db_err:
+                        st.error(f"❌ Database Transaction Failure: {str(db_err)}")
+            else:
+                st.error("❌ Spatial Processing Failure: The framework returned an empty layout dataframe. Check alignment parameters or original file formats.")
+                st.warning("💡 Advice: Ensure the source document matches KEA target signatures and that valid AI API credits are assigned inside your .env configuration.")
+    else:
+        st.info("💡 Standby: Upload a source PDF seat matrix document file layout above to open execution controls.")
 
 if __name__ == "__main__":
     render_ingestion_portal()
