@@ -3,29 +3,15 @@ import pandas as pd
 import sqlite3
 import os
 import tempfile
+import pypdf
 from typing import List, Optional
 from pydantic import BaseModel, Field
-
-# ==============================================================================
-# 1. HARDLOCK SYSTEM CACHE ENVIROMENT FLAGS
-# ==============================================================================
-tmp_dir = tempfile.gettempdir()
-os.environ["RAPIDOCR_MODEL_DIR"] = os.path.join(tmp_dir, "rapidocr_models")
-os.environ["PPOCR_HOME"] = os.path.join(tmp_dir, "ppocr_cache")
-os.environ["DOCLING_ARTIFACTS_PATH"] = os.path.join(tmp_dir, "docling_cache")
-os.environ["HF_HOME"] = os.path.join(tmp_dir, "huggingface_cache")
-os.environ["XDG_CACHE_HOME"] = os.path.join(tmp_dir, "xdg_cache")
-
-# Safe initialization imports (Bypassing non-existent sub-module imports)
-from docling.document_converter import DocumentConverter, PdfFormatOption
-from docling.datamodel.pipeline_options import PdfPipelineOptions
-from docling.datamodel.base_models import InputFormat
 from langchain_groq import ChatGroq
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import ChatPromptTemplate
 
 # ==========================================
-# 2. ENFORCED RECONSTRUCTION DATA SCHEMA
+# 1. ENFORCED RECONSTRUCTION DATA SCHEMA
 # ==========================================
 class SeatMatrixRecord(BaseModel):
     college_name: str = Field(..., description="Full clean name of the institution (e.g., 'ACS College of Engineering' or 'THE KISHKINDA UNIVERSITY')")
@@ -40,7 +26,7 @@ class SeatMatrixExtraction(BaseModel):
     records: List[SeatMatrixRecord] = Field(default=[], description="Structured institutional rows matching target schema formatting.")
 
 # ==========================================
-# 3. SEGMENTED DATABASE WRITE TRANSACTION
+# 2. SEGMENTED DATABASE WRITE TRANSACTION
 # ==========================================
 def save_dataframe_to_sqlite(df: pd.DataFrame, chunk_id: int):
     """Inserts a fragment of the extracted dataframe into the local SQLite database part-by-part."""
@@ -61,14 +47,14 @@ def save_dataframe_to_sqlite(df: pd.DataFrame, chunk_id: int):
         st.error(f"❌ **[DB ENGINE LOG - ERROR]: Failed to write chunk {chunk_id} to database: {str(db_err)}**")
 
 # ==========================================
-# 4. USER INTERFACE LAYOUT PLATFORM
+# 3. USER INTERFACE LAYOUT PLATFORM
 # ==========================================
 st.set_page_config(page_title="Data Extraction Engine", layout="wide")
 
 st.header("⚙️ Step-by-Step Interactive Extraction & Relational Sync Pipeline")
 st.markdown("""
-This dashboard prints out exactly what is happening under the hood part-by-part.
-By setting specialized `PdfPipelineOptions`, we instruct Docling to disable heavy layout networks, bypassing `.safetensors` crashes without requiring broken imports.
+This module extracts tabular schedules directly from your files step-by-step. 
+By pulling text streams locally via zero-weight backends, we completely sidestep system rendering issues (`libGL.so.1` or missing `.safetensors`).
 """)
 
 # Route API credential configuration via secrets safely
@@ -87,7 +73,7 @@ target_year = st.number_input(
 uploaded_file = st.file_uploader("Upload Seat Matrix Registry PDF File", type=["pdf"])
 
 # ==========================================
-# 5. EXECUTION PIPELINE RUNNER
+# 4. EXECUTION PIPELINE RUNNER
 # ==========================================
 if st.button("Execute Guided Extraction Pipeline") and uploaded_file:
     if not groq_api_key:
@@ -95,7 +81,7 @@ if st.button("Execute Guided Extraction Pipeline") and uploaded_file:
         st.stop()
         
     log_status_pane = st.container()
-    step1_pane = st.expander("📝 STEP 1 LOGS: Document Extraction (Zero-Weight Layout Parser Mode)", expanded=True)
+    step1_pane = st.expander("📝 STEP 1 LOGS: Local Stream Text Extraction (Zero-Weight Engine)", expanded=True)
     step2_pane = st.expander("🔀 STEP 2 LOGS: Text Splitting & Fragment Isolation", expanded=False)
     step3_pane = st.expander("🤖 STEP 3 LOGS: LLM Chunk Schema Parsing & DB Dump (Part-by-Part)", expanded=False)
     
@@ -103,41 +89,28 @@ if st.button("Execute Guided Extraction Pipeline") and uploaded_file:
         st.info("🚀 Starting core data pipeline execution framework. Tracking updates below...")
 
     # --------------------------------------------------------------------------
-    # PART 1: ZERO-WEIGHT RECOVERY VIA PIPELINE OPTIONS
+    # PART 1: ZERO-WEIGHT LOCAL STREAM RECOVERY
     # --------------------------------------------------------------------------
     with step1_pane:
-        st.write("⏳ Intercepting uploaded asset streams and forcing zero-weight layout flags...")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            tmp.write(uploaded_file.getvalue())
-            tmp_path = tmp.name
+        st.write("⏳ Intercepting uploaded asset streams and forcing local text stream parser...")
         
-        st.code(f"[FILE MANAGER]: Stream intercepted. Temporary file mapped safely to: {tmp_path}")
-        
-        # ======================================================================
-        # CORRECT METHOD TO DISABLE HEAVY MODEL DEPENDENCIES IN DOCLING v2
-        # ======================================================================
-        # Instead of importing a volatile backend wrapper path, turning off these 
-        # flags forces Docling to skip initializing the LayoutPredictor and 
-        # TablePredictor, falling back immediately to local string maps.
-        pipeline_options = PdfPipelineOptions()
-        pipeline_options.do_ocr = False
-        pipeline_options.do_table_structure = False
-        pipeline_options.images_scale = 0.0  # Turn off rendering pipelines
-        
-        converter = DocumentConverter(
-            format_options={
-                InputFormat.PDF: PdfFormatOption(
-                    pipeline_options=pipeline_options
-                )
-            }
-        )
-        
-        st.markdown("[ENGINE]: Invoking native pipeline conversion stream...")
-        conversion_output = converter.convert(tmp_path)
-        markdown_payload = conversion_output.document.export_to_markdown()
-        
-        st.success("✅ **Text Stream Extraction Complete! Text preview below:**")
-        st.text_area("Raw Extracted Text Stream (First 1000 Characters):", value=markdown_payload[:1000], height=200)
+        try:
+            # Parse the PDF text layer using a pure Python stream memory processor
+            pdf_reader = pypdf.PdfReader(uploaded_file)
+            extracted_lines = []
+            
+            for page_idx, page in enumerate(pdf_reader.pages):
+                page_text = page.extract_text()
+                if page_text:
+                    extracted_lines.append(f"--- PAGE {page_idx + 1} ---\n{page_text}")
+            
+            markdown_payload = "\n".join(extracted_lines)
+            
+            st.success("✅ **Text Stream Extraction Complete! Text preview below:**")
+            st.text_area("Raw Extracted Text Stream (First 1000 Characters):", value=markdown_payload[:1000], height=200)
+        except Exception as parse_error:
+            st.error(f"❌ Failed local processing stream extraction: {str(parse_error)}")
+            st.stop()
 
     # --------------------------------------------------------------------------
     # PART 2: TEXT SPLITTING
@@ -190,35 +163,37 @@ if st.button("Execute Guided Extraction Pipeline") and uploaded_file:
             )
             
             st.write(f"📡 Dispatching block {chunk_display_id} to Llama-3.3-70b inference endpoint...")
-            extraction_result = structured_extractor.invoke(formatted_prompt)
-            
-            chunk_records = []
-            if extraction_result and extraction_result.records:
-                for record in extraction_result.records:
-                    chunk_records.append(record.model_dump())
-                    global_record_holder.append(record.model_dump())
+            try:
+                extraction_result = structured_extractor.invoke(formatted_prompt)
                 
-                st.write(f"✨ Model successfully isolated **{len(chunk_records)} structured data rows** from block {chunk_display_id}.")
-                
-                # Turn batch records into a unified data frame instance
-                chunk_df = pd.DataFrame(chunk_records)
-                
-                # Keep schema properties uniform (Force null components to match requirements)
-                for col in ["city", "district", "address", "dept", "intake"]:
-                    if col not in chunk_df.columns:
-                        chunk_df[col] = None
-                
-                # Re-align index positions explicitly
-                chunk_df = chunk_df[["college_name", "city", "district", "address", "dept", "intake", "intake_year"]]
-                
-                # Display the data segment snapshot instantly on screen
-                st.dataframe(chunk_df, use_container_width=True)
-                
-                # Real-time part-by-part write straight to local database file
-                save_dataframe_to_sqlite(chunk_df, chunk_id=chunk_display_id)
-                
-            else:
-                st.warning(f"⚠️ Block {chunk_display_id} did not yield clean row models matching validations. Skipping write transaction.")
+                chunk_records = []
+                if extraction_result and extraction_result.records:
+                    for record in extraction_result.records:
+                        chunk_records.append(record.model_dump())
+                        global_record_holder.append(record.model_dump())
+                    
+                    st.write(f"✨ Model successfully isolated **{len(chunk_records)} structured data rows** from block {chunk_display_id}.")
+                    
+                    # Turn batch records into a unified data frame instance
+                    chunk_df = pd.DataFrame(chunk_records)
+                    
+                    # Keep schema properties uniform (Force null components to match requirements)
+                    for col in ["city", "district", "address", "dept", "intake"]:
+                        if col not in chunk_df.columns:
+                            chunk_df[col] = None
+                    
+                    # Re-align index positions explicitly
+                    chunk_df = chunk_df[["college_name", "city", "district", "address", "dept", "intake", "intake_year"]]
+                    
+                    # Display the data segment snapshot instantly on screen
+                    st.dataframe(chunk_df, use_container_width=True)
+                    
+                    # Real-time part-by-part write straight to local database file
+                    save_dataframe_to_sqlite(chunk_df, chunk_id=chunk_display_id)
+                else:
+                    st.warning(f"⚠️ Block {chunk_display_id} did not yield clean row models matching validations. Skipping write transaction.")
+            except Exception as invoke_error:
+                st.error(f"❌ Failed inference tracking execution on Block {chunk_display_id}: {str(invoke_error)}")
             
             progress_bar.progress(chunk_display_id / len(text_fragments))
 
@@ -255,5 +230,3 @@ if st.button("Execute Guided Extraction Pipeline") and uploaded_file:
         else:
             st.error("❌ Pipeline finished executing, but zero rows successfully passed data schema filters across the full document context.")
             
-        # Clear files cleanly
-        os.unlink(tmp_path)
