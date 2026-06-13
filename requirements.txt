@@ -4,7 +4,7 @@ streamlit
 # Data Manipulation & Numerical Processing
 pandas
 openpyxl
-pillow
+
 # Document Binary Parsers & Extractors
 pypdf
 python-docx
@@ -32,7 +32,7 @@ duckduckgo-search
 pdfplumber
 
 # --- ADVANCED ENSEMBLE AI PARSING ENGINES ---
-marker-pdf
+#marker-pdf
 docling
 #unstructured[pdf]
 # Note: Nougat uses torch-based vision models natively wrapped inside transformers
