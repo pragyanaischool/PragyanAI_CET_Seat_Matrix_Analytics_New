@@ -12,11 +12,12 @@ from langchain_groq import ChatGroq
 class CollegeEnrichmentEngine:
     """
     Enhanced Fault-Tolerant Federated Knowledge Discovery Engine for PragyanAI.
-    Concurrently queries multi-engine web search streams, employs an Adaptive Exponential Jitter Backoff
-    Multi-LLM Failover routing pool for semantic consolidation, and enforces strict relational alignment keys.
+    Concurrently queries multi-engine web search streams (SerpAPI, DuckDuckGo, Wikipedia),
+    employs an Adaptive Exponential Jitter Backoff Multi-LLM Failover routing pool 
+    for semantic consolidation, and enforces strict relational alignment keys.
     """
     def __init__(self):
-        # Initialize open-web tool wrappers safely inside exception boundaries
+        # --- PHASE 0: SAFE WRAPPER INITIALIZATION ---
         try:
             self.wiki = WikipediaAPIWrapper()
         except Exception:
@@ -32,7 +33,7 @@ class CollegeEnrichmentEngine:
         except Exception:
             self.ddg_search = None
             
-        # 🎯 Master Extraction Model Cluster Sequence Cascade Pool
+        # 🎯 Pure Groq-Llama Extraction & Consolidation Model Pool
         self.enrichment_model_pool = [
             {"provider": "groq", "name": "llama-3.3-70b-versatile"},
             {"provider": "groq", "name": "llama-3.1-8b-instant"},
@@ -41,7 +42,7 @@ class CollegeEnrichmentEngine:
         ]
 
     def _get_provider_client(self, model_meta: dict):
-        """Dynamic runtime adapter tracking and instantiation mapping for multi-provider profiles."""
+        """Dynamic runtime adapter tracking and instantiation mapping using pure Groq profiles."""
         model_name = model_meta["name"]
         return ChatGroq(model_name=model_name, temperature=0.0, max_tokens=2048)
 
@@ -115,7 +116,7 @@ class CollegeEnrichmentEngine:
         Orchestrates parallel multi-threaded federated web searches.
         Guarantees structured relational key returns even during total network failure.
         """
-        # Enforce strict text casing boundaries to eliminate key-mismatch risks
+        # Enforce strict text casing boundaries to eliminate key-mismatch risks during merge operations
         target_college_clean = str(college_name).strip().upper()
         target_city_clean = str(city).strip().upper()
 
@@ -123,6 +124,7 @@ class CollegeEnrichmentEngine:
         context_accumulator = []
 
         # --- PHASE 1: ASYNCHRONOUS THREADED BROKERS ---
+        # Executes search wrappers concurrently across parallel background threads to skip I/O bottlenecks
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                 future_google = executor.submit(self._query_google_stream, search_query)
@@ -202,8 +204,8 @@ class CollegeEnrichmentEngine:
             }
 
         # 🎯 THE ANTI-COLLAPSE LOCK:
+        # Re-bind the exact clean input keys to guarantee a perfect relational pd.merge join match
         extracted_data["college_name"] = target_college_clean
         extracted_data["city"] = target_city_clean
         
         return extracted_data
-        
