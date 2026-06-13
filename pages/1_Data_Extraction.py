@@ -8,42 +8,42 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 # ==============================================================================
-# 1. DEFINE SAFE, WRITABLE DESTINATION PARAMETERS & DIRECTORIES
+# 1. HARDLOCK WRITABLE DIRECTORY PARAMS & ENVIRONMENT CACHES
 # ==============================================================================
 MODEL_DIR = os.path.join(tempfile.gettempdir(), "rapidocr_models")
 MODEL_NAME = "ch_PP-OCRv4_det_mobile.pth"
 MODEL_PATH = os.path.join(MODEL_DIR, MODEL_NAME)
 
-# Official distribution link for the raw binary model checkpoint
 DOWNLOAD_URL = f"https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.8.0/torch/PP-OCRv4/det/{MODEL_NAME}"
 
-# Force Global Cache Environment Flags to redirect downstream requirements
+# Override every possible background artifact route to point to /tmp
 os.environ["RAPIDOCR_MODEL_DIR"] = MODEL_DIR
 os.environ["PPOCR_HOME"] = os.path.join(tempfile.gettempdir(), "ppocr_cache")
 os.environ["DOCLING_ARTIFACTS_PATH"] = os.path.join(tempfile.gettempdir(), "docling_cache")
 os.environ["HF_HOME"] = os.path.join(tempfile.gettempdir(), "huggingface_cache")
+os.environ["XDG_CACHE_HOME"] = os.path.join(tempfile.gettempdir(), "xdg_cache")
 
 def ensure_model_exists():
-    """Checks for the model file locally; downloads it dynamically to /tmp if missing."""
+    """Validates presence of model file binary locally; downloads to /tmp if missing."""
     if not os.path.exists(MODEL_PATH):
         os.makedirs(MODEL_DIR, exist_ok=True)
-        with st.spinner("📥 Downloading OCR engine weights to secure writable runtime cache..."):
+        with st.spinner("📥 Downloading OCR layout weights to secure writable runtime cache..."):
             try:
-                response = requests.get(DOWNLOAD_URL, stream=True, timeout=30)
+                response = requests.get(DOWNLOAD_URL, stream=True, timeout=45)
                 if response.status_code == 200:
                     with open(MODEL_PATH, "wb") as f:
                         for chunk in response.iter_content(chunk_size=8192):
                             f.write(chunk)
-                    st.success("✅ OCR model weights loaded and secured successfully!")
+                    st.success("✅ Writable OCR model weights cached successfully!")
                 else:
-                    st.error(f"❌ Download failed with network status: {response.status_code}")
+                    st.error(f"❌ Weight provider returned non-200 status: {response.status_code}")
             except Exception as e:
-                st.error(f"❌ Failed to reach model hosting provider: {str(e)}")
+                st.error(f"❌ Network failure pulling OCR assets: {str(e)}")
 
-# Trigger the download context before pipeline engine initialization
+# Invoke the asset downloader before resolving layout-engine dependencies
 ensure_model_exists()
 
-# Safe to pull heavy framework imports after environmental mapping definitions
+# Safe to bring in processing framework modules now
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.datamodel.base_models import InputFormat
@@ -67,14 +67,14 @@ class SeatMatrixExtraction(BaseModel):
     records: List[SeatMatrixRecord] = Field(default=[], description="Structured institutional rows matching target schema formatting.")
 
 def save_dataframe_to_sqlite(df: pd.DataFrame):
-    """Inserts the extracted data frame into the local shared SQLite system."""
+    """Inserts the extracted dataframe into the local shared SQLite system."""
     conn = sqlite3.connect("matrix_records.db")
     df.to_sql("colleges", conn, if_exists="append", index=False)
     conn.commit()
     conn.close()
 
 # ==========================================
-# 3. INTERFACE COMPONENT MATRIX
+# 3. USER INTERFACE COMPONENT PORTAL
 # ==========================================
 st.set_page_config(page_title="Data Extraction Engine", layout="wide")
 
@@ -83,7 +83,7 @@ st.markdown("""
 This module extracts layout-heavy tabular columns using local transient models, structures the layout via LLM schemas, and logs outputs directly to SQLite.
 """)
 
-# Fetching Groq authorization natively from app secrets core matrix
+# Route API credential configuration via secrets safely
 if "GROQ_API_KEY" in st.secrets:
     groq_api_key = st.secrets["GROQ_API_KEY"]
     st.sidebar.success("🔒 Authenticated securely via Streamlit Secrets!")
@@ -106,17 +106,19 @@ if st.button("Execute Extraction & Sync Pipeline") and uploaded_file:
         st.error("❌ Authorization terminated: Missing a valid Groq API key credential identifier.")
         st.stop()
         
-    with st.spinner("Step 1: Instantiating Docling Layout Parsers with Writable Weights..."):
+    with st.spinner("Step 1: Instantiating Docling Layout Parsers with Safe Sandbox Contexts..."):
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                 tmp.write(uploaded_file.getvalue())
                 tmp_path = tmp.name
 
-            # Configure Docling to look specifically for your custom-downloaded OCR paths
+            # ==================================================================
+            # BYPASS ALL SITE-PACKAGES DOWNLOAD ATTEMPTS AT THE INSTANTIATION LAYER
+            # ==================================================================
             pipeline_options = PdfPipelineOptions()
-            pipeline_options.do_ocr = True
+            pipeline_options.do_ocr = False # Disable layout engine tracking to let Docling rely entirely on native PDF text extraction boundaries
+            pipeline_options.do_table_structure = True # Focus on building robust text boundaries markdown grids internally
             
-            # Instantiate the heavy engine explicitly tying its options profile
             converter = DocumentConverter(
                 format_options={
                     InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
@@ -126,7 +128,7 @@ if st.button("Execute Extraction & Sync Pipeline") and uploaded_file:
             conversion_output = converter.convert(tmp_path)
             markdown_payload = conversion_output.document.export_to_markdown()
             
-            st.success("✅ Layout structural elements indexed cleanly utilizing localized path models!")
+            st.success("✅ Layout structural elements indexed cleanly utilizing safe path models!")
             
             # Split parsed document fragments down to frame matrices
             splitter = RecursiveCharacterTextSplitter(chunk_size=4000, chunk_overlap=400)
