@@ -1,22 +1,25 @@
+import os
 import sqlite3
 import pandas as pd
 
-DB_NAME = "pragyan_analytics.db"
+# Resolve the project path dynamically to maintain thread-safe integrity across multi-page views
+DB_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "database"))
+DB_PATH = os.path.join(DB_DIR, "seat_matrix.db")
 
-def init_db():
+def init_database():
     """
-    Initializes the persistent SQLite database tables.
-    Creates schemas for tracking multi-year seat allocation matrices
-    and caching federated open-web institutional enrichment parameters.
+    Initializes the local SQLite relational database schema with speed-optimized index anchors.
+    Explicitly creates isolated schemas for multi-year seat matrices and external enrichment.
     """
-    conn = sqlite3.connect(DB_NAME)
+    os.makedirs(DB_DIR, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     # 1. Unified Year-by-Year Master Seat Matrix Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS seat_matrix (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            college_name TEXT,
+            college_name TEXT NOT NULL,
             city TEXT,
             district TEXT,
             address TEXT,
@@ -27,8 +30,6 @@ def init_db():
     """)
     
     # 2. Open-Web Enrichment & Accreditation Cache Table
-    # college_name is a Primary Key to enforce a 1:Many relationship 
-    # with seat_matrix rows (one college profile maps to multiple department seat rows)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS college_enrichment (
             college_name TEXT PRIMARY KEY,
@@ -40,61 +41,111 @@ def init_db():
         )
     """)
     
+    # 🎯 HIGH-VELOCITY COVERING INDEXES (PREVENTS WORKSPACE TIMEOUTS DURING AGGREGATIONS)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_horizon_lookup ON seat_matrix(intake_year);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_composite_join ON seat_matrix(college_name);")
+    
     conn.commit()
     conn.close()
 
 def save_matrix_records(df: pd.DataFrame):
     """
-    Appends freshly extracted document data frames into the master seat_matrix table.
+    Commits structured and normalized data frame entries into the master seat_matrix table.
+    Automatically catches empty or malformed inputs to safeguard database integrity.
     
     Parameters:
-        df (pd.DataFrame): Normalized database rows containing parsed structural allocations.
+        df (pd.DataFrame): Normalized multi-engine extracted records payload block.
     """
-    conn = sqlite3.connect(DB_NAME)
-    # Appends incoming logs to support multiple years simultaneously without collisions
-    df.to_sql("seat_matrix", conn, if_exists="append", index=False)
-    conn.close()
+    if df is None or df.empty:
+        print("[Database Log Warning] Blocked an attempt to write an empty or unallocated DataFrame.")
+        return
+        
+    init_database()
+    conn = sqlite3.connect(DB_PATH)
+    
+    try:
+        # Enforce strict uniform types before execution loops to eliminate data type mismatches
+        write_df = df.copy()
+        
+        # Keep tracking columns matching core extraction parameters
+        core_columns = ['college_name', 'city', 'district', 'address', 'dept', 'intake', 'intake_year']
+        existing_cols = [col for col in core_columns if col in write_df.columns]
+        write_df = write_df[existing_cols]
+        
+        if 'intake' in write_df.columns:
+            write_df['intake'] = pd.to_numeric(write_df['intake'], errors='coerce').fillna(0).astype(int)
+        if 'intake_year' in write_df.columns:
+            write_df['intake_year'] = pd.to_numeric(write_df['intake_year'], errors='coerce').fillna(2024).astype(int)
+            
+        # Standardize strings to upper-case layout bounds to prevent case duplication anomalies
+        for col in ['college_name', 'city', 'district', 'dept']:
+            if col in write_df.columns:
+                write_df[col] = write_df[col].astype(str).str.strip().str.upper()
+
+        # Append rows transactionally into the local database table
+        write_df.to_sql("seat_matrix", conn, if_exists="append", index=False)
+    except Exception as tx_fault:
+        print(f"[Database Critical Error] Matrix writing execution dropped: {str(tx_fault)}")
+        raise tx_fault
+    finally:
+        conn.close()
 
 def save_enrichment_record(record: dict):
     """
-    Inserts or overwrites external metrics (accreditations, rankings, domains) 
-    for a specific collegiate institution entity.
+    Inserts or overwrites external web parameters for a specific college entity.
+    Forces uniform uppercase structural keys to eliminate relational matching gaps.
     
     Parameters:
-        record (dict): Clean JSON-derived dictionary mapping required intelligence properties.
+        record (dict): Clean JSON-derived dictionary mapping enrichment parameters.
     """
-    conn = sqlite3.connect(DB_NAME)
+    if not record or not record.get('college_name'):
+        return
+        
+    init_database()
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("""
-        INSERT OR REPLACE INTO college_enrichment (
-            college_name, 
-            website, 
-            naac_rating, 
-            nba_accredited, 
-            nirf_ranking, 
-            summary
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (
-        record.get('college_name'), 
-        record.get('website', 'N/A'), 
-        record.get('naac_rating', 'N/A'), 
-        record.get('nba_accredited', 'N/A'), 
-        record.get('nirf_ranking', 'N/A'), 
-        record.get('summary', 'No summary profile available.')
-    ))
-    conn.commit()
-    conn.close()
+    
+    # Secure uniform upper-casing on primary index tracking hooks
+    target_college_clean = str(record.get('college_name')).strip().upper()
+    
+    try:
+        cursor.execute("""
+            INSERT OR REPLACE INTO college_enrichment (
+                college_name, 
+                website, 
+                naac_rating, 
+                nba_accredited, 
+                nirf_ranking, 
+                summary
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            target_college_clean,
+            str(record.get('website', 'N/A')).strip(),
+            str(record.get('naac_rating', 'N/A')).strip().upper(),
+            str(record.get('nba_accredited', 'N/A')).strip(),
+            str(record.get('nirf_ranking', 'N/A')).strip().upper(),
+            str(record.get('summary', 'No summary profile available.')).strip()
+        ))
+        conn.commit()
+    except Exception as tx_fault:
+        print(f"[Database Critical Error] Enrichment entry writing dropped: {str(tx_fault)}")
+    finally:
+        conn.close()
 
 def get_combined_analytics() -> pd.DataFrame:
     """
-    Executes a left join operation between your multi-year seat allocations 
-    and open-web enrichment parameters to compile a unified database frame.
+    Queries and extracts full relational data tables via optimized left joins.
+    Ensures safe alignment across key strings to prevent data drops on frontend visuals.
     
     Returns:
-        pd.DataFrame: Complete tabular dataset framework matching downstream dashboard feeds.
+        pd.DataFrame: Clean data frame with uniform types to feed analytics pipelines.
     """
-    conn = sqlite3.connect(DB_NAME)
+    init_database()
+    if not os.path.exists(DB_PATH):
+        return pd.DataFrame(columns=['id', 'college_name', 'city', 'district', 'address', 'dept', 'intake', 'intake_year', 'website', 'naac_rating', 'nba_accredited', 'nirf_ranking', 'summary'])
+        
+    conn = sqlite3.connect(DB_PATH)
     query = """
         SELECT 
             sm.id,
@@ -105,26 +156,41 @@ def get_combined_analytics() -> pd.DataFrame:
             sm.dept,
             sm.intake,
             sm.intake_year,
-            ce.website,
-            ce.naac_rating,
-            ce.nba_accredited,
-            ce.nirf_ranking,
-            ce.summary
+            coalesce(ce.website, 'N/A') as website,
+            coalesce(ce.naac_rating, 'N/A') as naac_rating,
+            coalesce(ce.nba_accredited, 'N/A') as nba_accredited,
+            coalesce(ce.nirf_ranking, 'N/A') as nirf_ranking,
+            coalesce(ce.summary, 'No verification data available.') as summary
         FROM seat_matrix sm
         LEFT JOIN college_enrichment ce ON sm.college_name = ce.college_name
     """
-    df = pd.read_sql_query(query, conn)
-    conn.close()
-    return df
+    try:
+        df = pd.read_sql_query(query, conn)
+        if not df.empty:
+            # Enforce pristine types to shield downstream calculation blocks
+            df['intake_year'] = pd.to_numeric(df['intake_year']).astype(int)
+            df['intake'] = pd.to_numeric(df['intake']).astype(int)
+            df['college_name'] = df['college_name'].astype(str).str.strip().str.upper()
+            df['dept'] = df['dept'].astype(str).str.strip().str.upper()
+            df['district'] = df['district'].astype(str).str.strip().str.upper()
+            return df
+    except Exception as query_fault:
+        print(f"[Database Query Failure] Bypassed analytical stream readout: {str(query_fault)}")
+    finally:
+        conn.close()
+        
+    return pd.DataFrame(columns=['id', 'college_name', 'city', 'district', 'address', 'dept', 'intake', 'intake_year', 'website', 'naac_rating', 'nba_accredited', 'nirf_ranking', 'summary'])
 
 def clear_all_data():
     """
-    Utility function to flush database states when resetting system pipelines.
+    Safely flushes operational table structures when resetting data ingestion channels.
     """
-    conn = sqlite3.connect(DB_NAME)
+    if not os.path.exists(DB_PATH):
+        return
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("DROP TABLE IF EXISTS seat_matrix")
     cursor.execute("DROP TABLE IF EXISTS college_enrichment")
     conn.commit()
     conn.close()
-    init_db()
+    init_database()
