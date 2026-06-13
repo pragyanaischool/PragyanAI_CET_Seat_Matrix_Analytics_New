@@ -17,7 +17,7 @@ except ImportError:
     IBMDoclingConverter = None
 
 # ==============================================================================
-# 📋 STRUCTURED PYDANTIC SCHEMAS (DUPLICATED FROM YOUR COLAB NOTEBOOK)
+# 📋 STRUCTURED PYDANTIC SCHEMAS (ALIGNED WITH YOUR GOOGLE COLAB DESIGN)
 # ==============================================================================
 class SeatMatrixRecord(BaseModel):
     """
@@ -62,22 +62,21 @@ class SeatMatrixExtraction(BaseModel):
     )
 
 # ==============================================================================
-# 🚀 CASCADING MULTI-PROVIDER MULTI-LLM RESILIENT PARSER
+# 🚀 PURE GROQ MULTI-LLM CASCADING FAILOVER ORCHESTRATOR
 # ==============================================================================
 class PragyanEnsembleParser:
     """
-    Multi-Provider Multi-LLM Cascading Failover Routing Engine for PragyanAI.
-    Sequentially steps through a dynamic cluster of custom models and Groq endpoints
+    Pure Groq Multi-LLM Cascading Failover Routing Engine for PragyanAI.
+    Sequentially transitions down an alternate pool of pure Groq models 
     the millisecond a rate-limit exhaustion exception (429 / Quota) is caught.
     """
     def __init__(self):
-        # 🎯 Master Orchestration Cascade Chain Pool Configuration
+        # 🎯 Pure Groq Extraction Model Cascade Pool Configuration Fixed
         self.cascade_pool = [
-            {"provider": "groq", "name": "llama-3.1-8b-instant"},
-            {"provider": "groq", "name": "llama-3.3-70b-versatile"},
-            {"provider": "openai-oss", "name": "openai/gpt-oss-120b"},
-            {"provider": "openai-oss", "name": "openai/gpt-oss-20b"},
-            {"provider": "qwen", "name": "qwen/qwen3-32b"}
+            {"name": "llama-3.1-8b-instant"},
+            {"name": "llama-3.3-70b-versatile"},
+            {"name": "llama3-70b-8192"},
+            {"name": "llama3-8b-8192"}
         ]
         
         # System instructions mapped directly from your Colab workspace design
@@ -95,34 +94,16 @@ class PragyanEnsembleParser:
         ])
 
     def _get_provider_client(self, model_meta: dict):
-        """Dynamic runtime adapter tracking and instantiation mapping."""
-        provider = model_meta["provider"]
+        """Dynamic runtime adapter tracking and instantiation mapping using pure Groq instances."""
         model_name = model_meta["name"]
-        
-        if provider == "groq":
-            llm = ChatGroq(model_name=model_name, temperature=0.0, max_tokens=4096)
-            return llm.with_structured_output(SeatMatrixExtraction)
-            
-        elif provider in ["openai-oss", "qwen"]:
-            # Pull localized open source endpoints securely from custom configurations or environments
-            custom_base_url = os.getenv("OPEN_OSS_BASE_URL", "https://api.openai.com/v1")
-            custom_api_key = os.getenv("OPEN_OSS_API_KEY", os.getenv("GROQ_API_KEY"))
-            
-            llm = ChatOpenAI(
-                model_name=model_name,
-                temperature=0.0,
-                max_tokens=4096,
-                openai_api_base=custom_base_url,
-                openai_api_key=custom_api_key
-            )
-            return llm.with_structured_output(SeatMatrixExtraction)
-        else:
-            raise ValueError(f"Unknown interface provider hook context specified: {provider}")
+        llm = ChatGroq(model_name=model_name, temperature=0.0, max_tokens=4096)
+        return llm.with_structured_output(SeatMatrixExtraction)
 
     def _invoke_cascade_broker(self, chunk: str) -> Optional[SeatMatrixExtraction]:
-        """Loops through models dynamically, hot-swapping endpoints upon hitting a 429 error."""
+        """Loops through Groq models dynamically, hot-swapping endpoints upon hitting a 429 error."""
         formatted_messages = self.prompt_template.format_messages(text_chunk=chunk)
         
+        # Corrected variable reference loop to prevent runtime reference failures
         for idx, model_meta in enumerate(self.cascade_pool):
             try:
                 # Instantiate structured provider adapter dynamically
@@ -134,23 +115,24 @@ class PragyanEnsembleParser:
                     
             except Exception as e:
                 err_msg = str(e)
-                # Intercept rate limit, quota exhaustion, or overloaded hosting boundaries
+                # Intercept rate limit, token quota exhaustion, or temporary backend timeouts
                 if any(k in err_msg or k in err_msg.lower() for k in ["429", "rate_limit", "limit reached", "quota", "overloaded"]):
-                    print(f"    [!] Quota Exhausted for [{model_meta['name']}]. Cascading down to pool index {idx + 1}...")
+                    print(f"    [!] Groq Quota Exhausted for [{model_meta['name']}]. Cascading down to pool index {idx + 1}...")
                     continue
                 else:
-                    print(f"    [!] Critical Exception hit on current model layer [{model_meta['name']}]: {err_msg}")
+                    print(f"    [!] Critical Exception hit on Groq layer [{model_meta['name']}]: {err_msg}")
                     raise e
                     
-        # Emergency Safe Guard: If all models inside the cluster pool trigger 429s, apply short jitter backoff
-        print("    [⚠️] CRITICAL: Entire LLM failover cluster exhausted. Injecting 5s emergency jitter sleep...")
+        # Emergency Safe Guard: If all models inside the Groq cluster pool trigger 429s, apply short jitter backoff
+        print("    [⚠️] CRITICAL: Entire Groq failover cluster exhausted. Injecting 5s emergency jitter sleep...")
         time.sleep(5.0 + random.uniform(0.5, 1.5))
         
-        emergency_extractor = self._get_provider_client({"provider": "groq", "name": "llama-3.3-70b-versatile"})
+        # Final emergency retry run using the robust versatility model tier
+        emergency_extractor = self._get_provider_client({"name": "llama-3.3-70b-versatile"})
         return emergency_extractor.invoke(formatted_messages)
 
     def analyze_and_extract_matrix(self, file_bytes: bytes, intake_year: int) -> pd.DataFrame:
-        """Processes raw document bytes through text chunk loops utilizing the multi-LLM router canvas."""
+        """Processes raw document bytes through text chunk loops utilizing the pure Groq cascade system."""
         # Open up isolated localized secure disk paths to pipe raw input streams securely
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
             temp_pdf.write(file_bytes)
