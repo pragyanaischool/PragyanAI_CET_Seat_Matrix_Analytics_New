@@ -30,3 +30,11 @@ torch
 torchvision
 duckduckgo-search
 pdfplumber
+
+# --- ADVANCED ENSEMBLE AI PARSING ENGINES ---
+marker-pdf
+docling
+unstructured[pdf]
+# Note: Nougat uses torch-based vision models natively wrapped inside transformers
+transformers
+accelerate
