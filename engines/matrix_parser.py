@@ -48,22 +48,33 @@ class CETSeatMatrixParser:
             chain = self.recovery_template | self.llm
             response = chain.invoke({"text_stream": raw_text}).content
             
-            if "```json" in response:
-                json_str = response.split("```json")[-1].split("```")[0].strip()
-            elif "```" in response:
-                json_str = response.split("```")[-1].split("```")[0].strip()
+            # --- FIX: ROBUST MARKDOWN STRIPPING HEURISTICS ---
+            clean_content = response.strip()
+            
+            if "```json" in clean_content:
+                json_str = clean_content.split("```json")[-1].split("```")[0].strip()
+            elif "```" in clean_content:
+                json_str = clean_content.split("```")[-1].split("```")[0].strip()
             else:
-                json_str = response.strip()
+                # If it's wrapped in trailing text or conversational padding, find the array bounds
+                start_idx = clean_content.find("[")
+                end_idx = clean_content.rfind("]") + 1
+                if start_idx != -1 and end_idx != -1:
+                    json_str = clean_content[start_idx:end_idx]
+                else:
+                    json_str = clean_content
                 
             parsed_json = json.loads(json_str)
             df = pd.DataFrame(parsed_json)
             
             if not df.empty:
                 df['intake_year'] = int(intake_year)
-                df['dept'] = df['dept'].astype(str).str.strip().str.upper()
+                # Ensure naming consistency for down-stream analytics
+                if 'dept' in df.columns:
+                    df['dept'] = df['dept'].astype(str).str.strip().str.upper()
                 return df
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[Fallback Debug Parser Alert] JSON Recovery extraction loop bypassed: {str(e)}")
         return pd.DataFrame()
 
     def parse_text_stream(self, raw_text: str, intake_year: int) -> pd.DataFrame:
@@ -178,7 +189,7 @@ class CETSeatMatrixParser:
         df_final = pd.DataFrame(extracted_records)
         
         # --- DEEP EXTRACTION CRITICAL OVERRIDE ---
-        # If regex missed components or failed to parse, let Llama 3 70B handle structural mapping
+        # If regex missed components or failed to parse, trigger the updated robust JSON fallback handler
         if df_final.empty or df_final['dept'].isna().sum() > (len(df_final) * 0.2):
             df_final = self._parse_via_llm_fallback(raw_text, intake_year)
             
