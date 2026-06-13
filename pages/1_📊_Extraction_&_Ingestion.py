@@ -115,7 +115,7 @@ def render_ingestion_portal():
                         clean_normalized_df = pd.DataFrame()
                         
                 except Exception as enrichment_err:
-                    # 💡 FIXED: Re-aligned variable reference to enrichment_err to eliminate UnboundLocalError
+                    # FIXED: Re-aligned exception variable mapping precisely to resolve UnboundLocalError
                     st.error(f"❌ Critical Error during Post-Extraction Enrichment Layer: {str(enrichment_err)}")
                     return
 
