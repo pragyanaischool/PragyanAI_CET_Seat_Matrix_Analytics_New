@@ -12,7 +12,7 @@ class CETSeatMatrixParser:
     """
     def __init__(self):
         # High-capacity model used as a fallback safety layer for highly unstructured files
-        self.llm = ChatGroq(model_name="llama3-70b-8192", temperature=0.0)
+        self.llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.0)
         
         self.recovery_template = PromptTemplate.from_template("""
         You are an elite data engineer specializing in structuring educational seat matrices.
@@ -202,4 +202,3 @@ class CETSeatMatrixParser:
             df_final.reset_index(drop=True, inplace=True)
             
         return df_final
-        
