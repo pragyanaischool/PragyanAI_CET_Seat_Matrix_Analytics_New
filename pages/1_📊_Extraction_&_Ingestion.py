@@ -32,7 +32,7 @@ from database.db_handler import save_matrix_records, save_enrichment_record
 def render_ingestion_portal():
     """
     Main Ingestion and Data Ingestion View Portal for PragyanAI.
-    Coordinates resilient multi-LLM cascading extraction layers and parallel
+    Coordinates resilient pure Groq cascading extraction layers and parallel
     web enrichment to populate core relational database target schemas safely.
     """
     st.set_page_config(
@@ -52,7 +52,7 @@ def render_ingestion_portal():
         uploaded_file = st.file_uploader(
             "Upload Official Government Seat Matrix Document (PDF)", 
             type=["pdf"],
-            help="Upload the raw PDF layout. The engine will run sequential extractions utilizing a cascading failover model pool."
+            help="Upload the raw PDF layout. The engine will run sequential extractions utilizing a pure Groq Llama cascading failover pool."
         )
         
     with col_horizon:
@@ -69,10 +69,10 @@ def render_ingestion_portal():
     if uploaded_file is not None:
         file_bytes = uploaded_file.read()
         
-        if st.button("🚀 Execute Resilient Multi-LLM Ingestion & Sanitization"):
+        if st.button("🚀 Execute Resilient Pure Groq Ingestion & Sanitization"):
             
-            # 1. Pipeline Segment Alpha: Multi-Engine Concurrent Extraction
-            with st.spinner("⏳ Running dynamic Multi-LLM cascade extraction loops across text chunk segments..."):
+            # 1. Pipeline Segment Alpha: Multi-Engine Pure Groq Cascade Extraction
+            with st.spinner("⏳ Running dynamic Multi-LLM Llama cascade extraction loops across text chunk segments..."):
                 try:
                     orchestrator = PragyanEnsembleParser()
                     raw_extracted_df = orchestrator.analyze_and_extract_matrix(file_bytes, intake_year)
@@ -141,17 +141,16 @@ def render_ingestion_portal():
                 # Write back directly to localized persistent sqlite tables structure
                 with st.spinner("💾 Committing structured records matrix down to relational database tables..."):
                     try:
-                        # Saves directly to seat_matrix table
+                        # Saves directly to seat_matrix table via db_handler configuration
                         save_matrix_records(clean_normalized_df)
                         st.balloons()
                         st.info("💾 Operations Log: Target matrices committed and validated inside the local storage infrastructure successfully.")
                     except Exception as db_err:
                         st.error(f"❌ Database Transaction Failure: {str(db_err)}")
             else:
-                st.error("❌ Spatial Processing Failure: The framework returned an empty layout dataframe. Check alignment parameters or original file formats.")
+                st.error("❌ Spatial Processing Failure: The framework returned an empty layout dataframe. Check original file formats.")
     else:
         st.info("💡 Standby: Upload a source PDF seat matrix document file layout above to open execution controls.")
 
 if __name__ == "__main__":
     render_ingestion_portal()
-    
