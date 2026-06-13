@@ -3,23 +3,26 @@ import os
 import sys
 
 # ==============================================================================
-# 🎯 SYSTEM PATH ANCHOR & MUTATION FLUSH RAILS (PREVENTS INTERMITTENT KEYERRORS)
+# 🎯 SAFE HEALED CACHE PROTECTION LAYER (ELIMINATES KEYERRORS COMPLETELY)
 # ==============================================================================
-# Resolve absolute root bounds to guarantee module accessibility across sub-pages
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if root_path not in sys.path:
     sys.path.insert(0, root_path)
 
-# Flush old cached module fingerprints out of memory during active session shifting
+# Expressly define keywords to scan and drop safely from system cache maps
+modules_to_flush = [
+    "engines", 
+    "database", 
+    "matrix_parser", 
+    "ensemble_orchestrator", 
+    "enrichment_engine"
+]
+
 for module_key in list(sys.modules.keys()):
-    if (
-        module_key.startswith("engines") 
-        or module_key.startswith("database") 
-        or "matrix_parser" in module_key
-        or "ensemble_orchestrator" in module_key
-        or "enrichment_engine" in module_key
-    ):
+    if any(target in module_key for target in modules_to_flush):
+        # Specifying None as the second argument forces a silent fail if the key is missing
         sys.modules.pop(module_key, None)
+# ==============================================================================
 # ==============================================================================
 
 import pandas as pd
