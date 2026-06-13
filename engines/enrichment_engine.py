@@ -1,16 +1,20 @@
+import os
 import re
 import json
+import time
+import random
 import concurrent.futures
 from langchain_community.utilities import WikipediaAPIWrapper
 from langchain_community.utilities import SerpAPIWrapper
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 
 class CollegeEnrichmentEngine:
     """
     Enhanced Fault-Tolerant Federated Knowledge Discovery Engine for PragyanAI.
-    Concurrently queries multi-engine web search streams and enforces strict fallback 
-    alignment to ensure web connection drops or spelling shifts never break relational joins.
+    Concurrently queries multi-engine web search streams, employs a Cascading Multi-LLM 
+    Failover routing pool for semantic consolidation, and enforces strict relational alignment keys.
     """
     def __init__(self):
         # Initialize open-web tool wrappers safely inside exception boundaries
@@ -29,8 +33,37 @@ class CollegeEnrichmentEngine:
         except Exception:
             self.ddg_search = None
             
-        # Upgraded to high-capacity low-temperature versatile reasoner model
-        self.llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.0)
+        # 🎯 Master Extraction Model Cluster Sequence Cascade Pool
+        self.enrichment_model_pool = [
+            {"provider": "groq", "name": "llama-3.3-70b-versatile"},
+            {"provider": "openai-oss", "name": "openai/gpt-oss-120b"},
+            {"provider": "qwen", "name": "qwen/qwen3-32b"},
+            {"provider": "openai-oss", "name": "openai/gpt-oss-20b"},
+            {"provider": "groq", "name": "llama-3.1-8b-instant"}
+        ]
+
+    def _get_provider_client(self, model_meta: dict):
+        """Dynamic runtime adapter tracking and instantiation mapping for multi-provider profiles."""
+        provider = model_meta["provider"]
+        model_name = model_meta["name"]
+        
+        if provider == "groq":
+            return ChatGroq(model_name=model_name, temperature=0.0, max_tokens=2048)
+            
+        elif provider in ["openai-oss", "qwen"]:
+            # Pull localized custom endpoint configurations securely from system server environments
+            custom_base_url = os.getenv("OPEN_OSS_BASE_URL", "https://api.openai.com/v1")
+            custom_api_key = os.getenv("OPEN_OSS_API_KEY", os.getenv("GROQ_API_KEY"))
+            
+            return ChatOpenAI(
+                model_name=model_name,
+                temperature=0.0,
+                max_tokens=2048,
+                openai_api_base=custom_base_url,
+                openai_api_key=custom_api_key
+            )
+        else:
+            raise ValueError(f"Unknown interface provider hook context specified: {provider}")
 
     def _query_google_stream(self, query: str) -> str:
         if not self.serp_search:
@@ -55,6 +88,33 @@ class CollegeEnrichmentEngine:
             return f"=== WIKIPEDIA ARTICLE STREAM RES ===\n{self.wiki.run(f'{college_name} {city}')}"
         except Exception as e:
             return f"Wikipedia Stream Bypassed/Failed: {str(e)}"
+
+    def _invoke_semantic_cascade(self, prompt: str) -> str:
+        """
+        Loops through the custom model pool and shifts endpoints dynamically 
+        the moment a rate limit (429) or quota threshold is breached.
+        """
+        for idx, model_meta in enumerate(self.enrichment_model_pool):
+            try:
+                llm_instance = self._get_provider_client(model_meta)
+                response = llm_instance.invoke(prompt).content
+                return response.strip()
+            except Exception as e:
+                err_msg = str(e)
+                # Intercept rate limit, quota exhaustion, or overloaded hosting boundaries
+                if any(k in err_msg or k in err_msg.lower() for k in ["429", "rate_limit", "limit reached", "quota", "overloaded"]):
+                    print(f"    [!] Enrichment Quota Exhausted for [{model_meta['name']}]. Cascading to fallback tier {idx + 1}...")
+                    continue
+                else:
+                    print(f"    [!] Critical Model Exception hit on enrichment layer: {err_msg}")
+                    raise e
+
+        # Emergency Safe Guard: Apply randomized jitter sleep if the cluster pool is completely congested
+        print("    [⚠️] CRITICAL: Entire enrichment cluster congested. Injecting emergency jitter sleep...")
+        time.sleep(5.0 + random.uniform(0.5, 1.5))
+        
+        emergency_llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.0)
+        return emergency_llm.invoke(prompt).content.strip()
 
     def discover_college_details(self, college_name: str, city: str) -> dict:
         """
@@ -126,8 +186,8 @@ class CollegeEnrichmentEngine:
                 raw_context=compiled_search_context
             )
             
-            llm_output = self.llm.invoke(formatted_prompt).content
-            clean_content = llm_output.strip()
+            # Execute the prompt payload using the multi-LLM failover router
+            clean_content = self._invoke_semantic_cascade(formatted_prompt)
             
             # Regular expression boundary extractor isolates the JSON body safely
             json_match = re.search(r'\{.*\}', clean_content, re.DOTALL)
@@ -162,3 +222,4 @@ class CollegeEnrichmentEngine:
         extracted_data["city"] = target_city_clean
         
         return extracted_data
+        
