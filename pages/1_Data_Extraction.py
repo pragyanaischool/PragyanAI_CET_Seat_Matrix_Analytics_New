@@ -7,7 +7,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 # ==============================================================================
-# 1. HARDLOCK CACHE DIRECTORIES TO EMULATE WRITABLE ENVIRONMENT
+# 1. HARDLOCK SYSTEM CACHE ENVIROMENT FLAGS
 # ==============================================================================
 tmp_dir = tempfile.gettempdir()
 os.environ["RAPIDOCR_MODEL_DIR"] = os.path.join(tmp_dir, "rapidocr_models")
@@ -16,11 +16,10 @@ os.environ["DOCLING_ARTIFACTS_PATH"] = os.path.join(tmp_dir, "docling_cache")
 os.environ["HF_HOME"] = os.path.join(tmp_dir, "huggingface_cache")
 os.environ["XDG_CACHE_HOME"] = os.path.join(tmp_dir, "xdg_cache")
 
-# Safe initialization imports
+# Safe initialization imports (Bypassing non-existent sub-module imports)
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.datamodel.base_models import InputFormat
-from docling.backend.pypdf_backend import PyPdfBackend  # Strict local layout-free text extraction
 from langchain_groq import ChatGroq
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import ChatPromptTemplate
@@ -29,11 +28,11 @@ from langchain_core.prompts import ChatPromptTemplate
 # 2. ENFORCED RECONSTRUCTION DATA SCHEMA
 # ==========================================
 class SeatMatrixRecord(BaseModel):
-    college_name: str = Field(..., description="Full clean name of the institution (e.g., 'ACS College of Engineering' or 'THE KISHKINDA UNIVERISTY')")
+    college_name: str = Field(..., description="Full clean name of the institution (e.g., 'ACS College of Engineering' or 'THE KISHKINDA UNIVERSITY')")
     city: Optional[str] = Field(None, description="City location name if clearly stated or extracted, otherwise null.")
     district: Optional[str] = Field(None, description="Target district context if clearly stated, otherwise null.")
-    address: Optional[str] = Field(None, description="The complete clean street/location address string (e.g., 'SIRUGUPPA ROAD, NEAR SINDHIGERI VILLAGE, BELLARI').")
-    dept: Optional[str] = Field(None, description="Academic department course / branch category (e.g., 'COMPUTER SCIENCE AND ENGG').")
+    address: Optional[str] = Field(None, description="The complete clean street/location address string.")
+    dept: Optional[str] = Field(None, description="Academic department course / branch category.")
     intake: Optional[int] = Field(None, description="Total absolute allocated seat matrix capacity value. Convert to integer format.")
     intake_year: Optional[int] = Field(None, description="The structural allocation year context for this specific row.")
 
@@ -44,7 +43,7 @@ class SeatMatrixExtraction(BaseModel):
 # 3. SEGMENTED DATABASE WRITE TRANSACTION
 # ==========================================
 def save_dataframe_to_sqlite(df: pd.DataFrame, chunk_id: int):
-    """Inserts a chunk of the extracted dataframe into the local SQLite database part-by-part."""
+    """Inserts a fragment of the extracted dataframe into the local SQLite database part-by-part."""
     st.markdown(f"💾 **[DB ENGINE LOG]: Initiating write transaction for Data Fragment Batch {chunk_id}...**")
     try:
         conn = sqlite3.connect("matrix_records.db")
@@ -69,7 +68,7 @@ st.set_page_config(page_title="Data Extraction Engine", layout="wide")
 st.header("⚙️ Step-by-Step Interactive Extraction & Relational Sync Pipeline")
 st.markdown("""
 This dashboard prints out exactly what is happening under the hood part-by-part.
-By forcing a layout-free text extraction backend, we completely sidestep cloud-native model caching issues (`.safetensors` missing errors).
+By setting specialized `PdfPipelineOptions`, we instruct Docling to disable heavy layout networks, bypassing `.safetensors` crashes without requiring broken imports.
 """)
 
 # Route API credential configuration via secrets safely
@@ -96,7 +95,7 @@ if st.button("Execute Guided Extraction Pipeline") and uploaded_file:
         st.stop()
         
     log_status_pane = st.container()
-    step1_pane = st.expander("📝 STEP 1 LOGS: Document Extraction (Zero-Weight Core Backend Mode)", expanded=True)
+    step1_pane = st.expander("📝 STEP 1 LOGS: Document Extraction (Zero-Weight Layout Parser Mode)", expanded=True)
     step2_pane = st.expander("🔀 STEP 2 LOGS: Text Splitting & Fragment Isolation", expanded=False)
     step3_pane = st.expander("🤖 STEP 3 LOGS: LLM Chunk Schema Parsing & DB Dump (Part-by-Part)", expanded=False)
     
@@ -104,10 +103,10 @@ if st.button("Execute Guided Extraction Pipeline") and uploaded_file:
         st.info("🚀 Starting core data pipeline execution framework. Tracking updates below...")
 
     # --------------------------------------------------------------------------
-    # PART 1: ZERO-WEIGHT NATIVE EXTRACTION BACKEND
+    # PART 1: ZERO-WEIGHT RECOVERY VIA PIPELINE OPTIONS
     # --------------------------------------------------------------------------
     with step1_pane:
-        st.write("⏳ Intercepting uploaded asset streams and forcing PyPdf native text extraction backend...")
+        st.write("⏳ Intercepting uploaded asset streams and forcing zero-weight layout flags...")
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(uploaded_file.getvalue())
             tmp_path = tmp.name
@@ -115,33 +114,36 @@ if st.button("Execute Guided Extraction Pipeline") and uploaded_file:
         st.code(f"[FILE MANAGER]: Stream intercepted. Temporary file mapped safely to: {tmp_path}")
         
         # ======================================================================
-        # CRITICAL FIX: SWAP OUT DEF_BACKEND WITH PYPDF TO BYPASS SAFETENSORS CHECKS
+        # CORRECT METHOD TO DISABLE HEAVY MODEL DEPENDENCIES IN DOCLING v2
         # ======================================================================
-        # Explicitly setting PyPdfBackend forces the framework to pull text flows
-        # programmatically without looking for layout weights or vision models.
+        # Instead of importing a volatile backend wrapper path, turning off these 
+        # flags forces Docling to skip initializing the LayoutPredictor and 
+        # TablePredictor, falling back immediately to local string maps.
         pipeline_options = PdfPipelineOptions()
+        pipeline_options.do_ocr = False
+        pipeline_options.do_table_structure = False
+        pipeline_options.images_scale = 0.0  # Turn off rendering pipelines
         
         converter = DocumentConverter(
             format_options={
                 InputFormat.PDF: PdfFormatOption(
-                    pipeline_options=pipeline_options,
-                    backend=PyPdfBackend  # Drops neural layout predictors cleanly
+                    pipeline_options=pipeline_options
                 )
             }
         )
         
-        st.markdown("[ENGINE]: Invoking PyPdf document conversion block...")
+        st.markdown("[ENGINE]: Invoking native pipeline conversion stream...")
         conversion_output = converter.convert(tmp_path)
         markdown_payload = conversion_output.document.export_to_markdown()
         
-        st.success("✅ **Text Stream Extraction Complete! Structural text preview below:**")
+        st.success("✅ **Text Stream Extraction Complete! Text preview below:**")
         st.text_area("Raw Extracted Text Stream (First 1000 Characters):", value=markdown_payload[:1000], height=200)
 
     # --------------------------------------------------------------------------
     # PART 2: TEXT SPLITTING
     # --------------------------------------------------------------------------
     with step2_pane:
-        st.write("切割 Initializing structural token partition boundaries...")
+        st.write("✂️ Initializing structural token partition boundaries...")
         splitter = RecursiveCharacterTextSplitter(chunk_size=4000, chunk_overlap=400)
         text_fragments = splitter.split_text(markdown_payload)
         
@@ -163,7 +165,7 @@ if st.button("Execute Guided Extraction Pipeline") and uploaded_file:
             Convert raw engineering seat matrices, lines, and blocks into precise data models.
             
             CRITICAL DESIGN DIRECTIVES:
-            1. Extract the 'college_name' precisely. Do not truncate strings. (e.g., 'THE KISHKINDA UNIVERISTY').
+            1. Extract the 'college_name' precisely. Do not truncate strings. (e.g., 'THE KISHKINDA UNIVERSITY').
             2. If structural address contexts mention items like 'BANGALORE' or 'BELLARI', map that data directly to 'city' or 'district'.
             3. If an explicit column cell property cannot be located anywhere within the text context, explicitly return null for that attribute.
             4. Force 'intake_year' explicitly to {year} for every single individual record parsed.
