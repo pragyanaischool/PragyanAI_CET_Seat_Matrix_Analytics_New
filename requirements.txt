@@ -27,7 +27,6 @@ faiss-cpu
 sentence-transformers
 huggingface-hub
 torch
-torchvision
 duckduckgo-search
 pdfplumber
 
@@ -36,5 +35,3 @@ pdfplumber
 docling
 #unstructured[pdf]
 # Note: Nougat uses torch-based vision models natively wrapped inside transformers
-transformers
-accelerate
