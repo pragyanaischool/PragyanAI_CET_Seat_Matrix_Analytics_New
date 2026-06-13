@@ -1,0 +1,29 @@
+# UI Frontend Framework
+streamlit
+
+# Data Manipulation & Numerical Processing
+pandas
+openpyxl
+
+# Document Binary Parsers & Extractors
+pypdf
+python-docx
+
+# GenAI Orchestration & LLM Frameworks
+langchain
+langchain-core
+langchain-groq
+langchain-community
+
+# Federated Open-Web Search Tools
+google-search-results
+duckduckgo-search
+
+# Environment Utilities
+python-dotenv
+
+faiss-cpu
+sentence-transformers
+huggingface-hub
+torch
+torchvision
