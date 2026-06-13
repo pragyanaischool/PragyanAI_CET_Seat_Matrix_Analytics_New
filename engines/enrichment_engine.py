@@ -13,8 +13,8 @@ class CollegeEnrichmentEngine:
     """
     Enhanced Fault-Tolerant Federated Knowledge Discovery Engine for PragyanAI.
     Concurrently queries multi-engine web search streams (SerpAPI, DuckDuckGo, Wikipedia),
-    employs an Adaptive Exponential Jitter Backoff Multi-LLM Failover routing pool 
-    for semantic consolidation, and enforces strict relational alignment keys to protect pipeline states.
+    employs an Adaptive Exponential Jitter Backoff Multi-LLM cross-provider failover routing pool 
+    for semantic consolidation, and enforces strict relational alignment keys.
     """
     def __init__(self):
         # --- PHASE 0: SAFE WRAPPER INITIALIZATION ---
@@ -33,18 +33,45 @@ class CollegeEnrichmentEngine:
         except Exception:
             self.ddg_search = None
             
-        # 🎯 Aligned Pure Groq-Llama Extraction & Consolidation Model Pool Configurations
+        # 🎯 Dynamic Multi-Provider Multi-LLM Cascade Configuration Pool Restored
         self.enrichment_model_pool = [
-            {"provider": "groq", "name": "llama-3.3-70b-versatile"},
             {"provider": "groq", "name": "llama-3.1-8b-instant"},
-            {"provider": "groq", "name": "llama3-70b-8192"},
-            {"provider": "groq", "name": "llama3-8b-8192"}
+            {"provider": "groq", "name": "llama-3.3-70b-versatile"},
+            {"provider": "openai-oss", "name": "openai/gpt-oss-120b"},
+            {"provider": "openai-oss", "name": "openai/gpt-oss-20b"},
+            {"provider": "qwen", "name": "qwen/qwen3-32b"}
         ]
 
     def _get_provider_client(self, model_meta: dict):
-        """Dynamic runtime adapter tracking and instantiation mapping using pure Groq profiles."""
+        """
+        Dynamic runtime adapter tracking and instantiation mapping.
+        Imports ChatOpenAI defensively inline only when triggered to avoid global dependency errors.
+        """
+        provider = model_meta["provider"]
         model_name = model_meta["name"]
-        return ChatGroq(model_name=model_name, temperature=0.0, max_tokens=2048)
+        
+        if provider == "groq":
+            return ChatGroq(model_name=model_name, temperature=0.0, max_tokens=2048)
+            
+        elif provider in ["openai-oss", "qwen"]:
+            try:
+                from langchain_openai import ChatOpenAI
+            except ImportError as e:
+                print("[!] Defensive Guard: langchain_openai is not installed in this environment. Falling back to Groq Llama alternative...")
+                return ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.0, max_tokens=2048)
+                
+            custom_base_url = os.getenv("OPEN_OSS_BASE_URL", "https://api.openai.com/v1")
+            custom_api_key = os.getenv("OPEN_OSS_API_KEY", os.getenv("GROQ_API_KEY"))
+            
+            return ChatOpenAI(
+                model_name=model_name,
+                temperature=0.0,
+                max_tokens=2048,
+                openai_api_base=custom_base_url,
+                openai_api_key=custom_api_key
+            )
+        else:
+            raise ValueError(f"Unknown interface provider hook context specified: {provider}")
 
     def _query_google_stream(self, query: str) -> str:
         if not self.serp_search:
@@ -89,7 +116,7 @@ class CollegeEnrichmentEngine:
                 except Exception as e:
                     err_msg = str(e)
                     
-                    # Intercept Rate Limits (429), Token Window Caps, or congested hosting barriers
+                    # Catch Rate Limits (429), Token Window Caps, or congested server thresholds
                     if any(k in err_msg or k in err_msg.lower() for k in ["429", "rate_limit", "limit reached", "quota", "overloaded"]):
                         retries += 1
                         # Apply exponential backoff with a randomized multiplier (jitter) to prevent lock synchronization
@@ -124,7 +151,6 @@ class CollegeEnrichmentEngine:
         context_accumulator = []
 
         # --- PHASE 1: ASYNCHRONOUS THREADED BROKERS ---
-        # Executes search wrappers concurrently across parallel background threads to skip I/O bottlenecks
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                 future_google = executor.submit(self._query_google_stream, search_query)
@@ -204,9 +230,7 @@ class CollegeEnrichmentEngine:
             }
 
         # 🎯 THE ANTI-COLLAPSE LOCK:
-        # Re-bind the exact clean input keys to guarantee a perfect relational pd.merge join match
         extracted_data["college_name"] = target_college_clean
         extracted_data["city"] = target_city_clean
         
         return extracted_data
-    
