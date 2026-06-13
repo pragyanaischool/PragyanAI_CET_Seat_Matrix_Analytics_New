@@ -3,14 +3,14 @@ import os
 import sys
 
 # ==============================================================================
-# 🎯 PATH PATCH & CACHE PROTECTION LAYER (PREVENTS INTERMITTENT KEYERRORS)
+# 🎯 SYSTEM PATH ANCHOR & MUTATION FLUSH RAILS (PREVENTS INTERMITTENT KEYERRORS)
 # ==============================================================================
-# Resolve absolute path bounds to guarantee module accessibility
+# Resolve absolute root bounds to guarantee module accessibility across sub-pages
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if root_path not in sys.path:
     sys.path.insert(0, root_path)
 
-# Flush out lingering cached runtime instances to eliminate cross-page import collisions
+# Flush old cached module fingerprints out of memory during active session shifting
 for module_key in list(sys.modules.keys()):
     if (
         module_key.startswith("engines") 
@@ -24,14 +24,14 @@ for module_key in list(sys.modules.keys()):
 
 import pandas as pd
 from engines.ensemble_orchestrator import PragyanEnsembleParser
-from engines.enrichment_engine import PragyanMatrixEnricher
+from engines.enrichment_engine import CollegeEnrichmentEngine  # 💡 Healed: Direct Naming Link Alignment
 from database.db_handler import save_matrix_records
 
 def render_ingestion_portal():
     """
-    Main Ingestion View Portal for PragyanAI.
-    Combines multi-engine layout extraction layers and entity enrichment 
-    to guarantee clean row multiplication metrics without signature drops.
+    Main Ingestion and Data Ingestion View Portal for PragyanAI.
+    Coordinates multi-engine layout extraction layers and advanced web enrichment
+    to guarantee clean row multiplication metrics without structural drops.
     """
     st.set_page_config(
         page_title="PragyanAI Ingestion Portal", 
@@ -78,13 +78,44 @@ def render_ingestion_portal():
                     st.error(f"❌ Critical Error during Ensemble Extraction Layer: {str(extraction_err)}")
                     return
 
-            # 2. Pipeline Segment Beta: Cross-Validation & Text Enrichment Rails
-            with st.spinner("🧠 Running data healing rules (Standardizing geographics, abbreviations, and intake sanity filters)..."):
+            # 2. Pipeline Segment Beta: Cross-Validation & Asynchronous Web Enrichment Rails
+            with st.spinner("🧠 Running parallel web enrichment (SerpAPI Google Search + Wikipedia + DuckDuckGo)..."):
                 try:
-                    enricher = PragyanMatrixEnricher()
-                    clean_normalized_df = enricher.enrich_extracted_dataframe(raw_extracted_df)
+                    # Instantiating the newly aligned asynchronous engine component
+                    enricher = CollegeEnrichmentEngine()  # 💡 Aligned Class Initialization Hook
+                    
+                    # Process the extracted rows through the enrichment engine loop
+                    if raw_extracted_df is not None and not raw_extracted_df.empty:
+                        enriched_records = []
+                        
+                        # Isolate colleges uniquely to save API lookups and leverage concurrent threads nicely
+                        unique_colleges = raw_extracted_df[['college_name', 'city']].drop_duplicates()
+                        
+                        st.info(f"🔍 Discovered {len(unique_colleges)} unique institution profiles. Initializing federated knowledge discovery threads...")
+                        
+                        # Progress bar for visual UI tracking feedback loops
+                        progress_bar = st.progress(0)
+                        total_colleges = len(unique_colleges)
+                        
+                        for idx, row in enumerate(unique_colleges.itertuples(), 1):
+                            college_details = enricher.discover_college_details(row.college_name, row.city)
+                            enriched_records.append(college_details)
+                            progress_bar.progress(idx / total_colleges)
+                            
+                        enrichment_lookup_df = pd.DataFrame(enriched_records)
+                        
+                        # Merge the newly discovered parameters back with the multiplied rows
+                        clean_normalized_df = pd.merge(
+                            raw_extracted_df, 
+                            enrichment_lookup_df, 
+                            on=['college_name', 'city'], 
+                            how='left'
+                        )
+                    else:
+                        clean_normalized_df = pd.DataFrame()
+                        
                 except Exception as enrichment_err:
-                    st.error(f"❌ Critical Error during Post-Extraction Enrichment Layer: {str(enrichment_err)}")
+                    st.error(f"❌ Critical Error during Post-Extraction Enrichment Layer: {str(extraction_err)}")
                     return
 
             # 3. Pipeline Segment Gamma: Metrics Display and Relational Database Injection
