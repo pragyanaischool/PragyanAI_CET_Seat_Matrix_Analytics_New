@@ -23,18 +23,17 @@ for module_key in list(sys.modules.keys()):
         # Specifying None as the second argument forces a silent fail if the key is missing
         sys.modules.pop(module_key, None)
 # ==============================================================================
-# ==============================================================================
 
 import pandas as pd
 from engines.ensemble_orchestrator import PragyanEnsembleParser
 from engines.enrichment_engine import CollegeEnrichmentEngine  
-from database.db_handler import save_matrix_records
+from database.db_handler import save_matrix_records, save_enrichment_record
 
 def render_ingestion_portal():
     """
     Main Ingestion and Data Ingestion View Portal for PragyanAI.
-    Coordinates multi-engine layout extraction layers and advanced web enrichment
-    to guarantee clean row multiplication metrics without structural drops.
+    Coordinates resilient multi-LLM cascading extraction layers and parallel
+    web enrichment to populate core relational database target schemas safely.
     """
     st.set_page_config(
         page_title="PragyanAI Ingestion Portal", 
@@ -53,7 +52,7 @@ def render_ingestion_portal():
         uploaded_file = st.file_uploader(
             "Upload Official Government Seat Matrix Document (PDF)", 
             type=["pdf"],
-            help="Upload the raw PDF layout. The engine will run concurrent extractions via Docling, pdfplumber, and PyMuPDF."
+            help="Upload the raw PDF layout. The engine will run sequential extractions utilizing a cascading failover model pool."
         )
         
     with col_horizon:
@@ -70,10 +69,10 @@ def render_ingestion_portal():
     if uploaded_file is not None:
         file_bytes = uploaded_file.read()
         
-        if st.button("🚀 Execute Multi-Engine Ingestion & Sanitization"):
+        if st.button("🚀 Execute Resilient Multi-LLM Ingestion & Sanitization"):
             
             # 1. Pipeline Segment Alpha: Multi-Engine Concurrent Extraction
-            with st.spinner("⏳ Compiling multi-library text maps (IBM Docling Table Grids + Plumber + PyMuPDF)..."):
+            with st.spinner("⏳ Running dynamic Multi-LLM cascade extraction loops across text chunk segments..."):
                 try:
                     orchestrator = PragyanEnsembleParser()
                     raw_extracted_df = orchestrator.analyze_and_extract_matrix(file_bytes, intake_year)
@@ -81,48 +80,55 @@ def render_ingestion_portal():
                     st.error(f"❌ Critical Error during Ensemble Extraction Layer: {str(extraction_err)}")
                     return
 
-            # 2. Pipeline Segment Beta: Cross-Validation & Asynchronous Web Enrichment Rails
-            with st.spinner("🧠 Running parallel web enrichment (SerpAPI Google Search + Wikipedia + DuckDuckGo)..."):
-                try:
-                    # Instantiating the aligned asynchronous engine component
-                    enricher = CollegeEnrichmentEngine()  
-                    
-                    # Process the extracted rows through the enrichment engine loop
-                    if raw_extracted_df is not None and not raw_extracted_df.empty:
+            # Validate extraction payload block state
+            if raw_extracted_df is not None and not raw_extracted_df.empty:
+                
+                # Enforce pristine uppercase structural parameters to guarantee clean lookup match signatures
+                for col in ['college_name', 'city', 'district', 'dept']:
+                    if col in raw_extracted_df.columns:
+                        raw_extracted_df[col] = raw_extracted_df[col].astype(str).str.strip().str.upper()
+                
+                # 2. Pipeline Segment Beta: Cross-Validation & Asynchronous Web Enrichment Rails
+                with st.spinner("🧠 Running parallel web enrichment threads (SerpAPI + Wikipedia + DuckDuckGo)..."):
+                    try:
+                        enricher = CollegeEnrichmentEngine()  
                         enriched_records = []
                         
-                        # Isolate colleges uniquely to save API lookups and leverage concurrent threads nicely
+                        # Isolate unique colleges to save API quotas and optimize parallel performance limits
                         unique_colleges = raw_extracted_df[['college_name', 'city']].drop_duplicates()
                         
-                        st.info(f"🔍 Discovered {len(unique_colleges)} unique institution profiles. Initializing federated knowledge discovery threads...")
+                        st.info(f"🔍 Discovered {len(unique_colleges)} unique institution profiles. Initializing federated knowledge threads...")
                         
-                        # Progress bar for visual UI tracking feedback loops
+                        # Progress bar initialization for tracking loop updates
                         progress_bar = st.progress(0)
                         total_colleges = len(unique_colleges)
                         
                         for idx, row in enumerate(unique_colleges.itertuples(), 1):
                             college_details = enricher.discover_college_details(row.college_name, row.city)
                             enriched_records.append(college_details)
+                            
+                            # Transactionally persist unique enrichment parameters to cache table
+                            save_enrichment_record(college_details)
+                            
                             progress_bar.progress(idx / total_colleges)
                             
                         enrichment_lookup_df = pd.DataFrame(enriched_records)
                         
-                        # Merge the newly discovered parameters back with the multiplied rows
+                        # Merge the newly discovered parameters back with raw extracted options records
                         clean_normalized_df = pd.merge(
                             raw_extracted_df, 
                             enrichment_lookup_df, 
                             on=['college_name', 'city'], 
                             how='left'
                         )
-                    else:
-                        clean_normalized_df = pd.DataFrame()
-                        
-                except Exception as enrichment_err:
-                    # FIXED: Re-aligned exception variable mapping precisely to resolve UnboundLocalError
-                    st.error(f"❌ Critical Error during Post-Extraction Enrichment Layer: {str(enrichment_err)}")
-                    return
+                    except Exception as enrichment_err:
+                        st.error(f"❌ Critical Error during Post-Extraction Enrichment Layer: {str(enrichment_err)}")
+                        return
+            else:
+                st.error("❌ Extraction Error: The text segmentation parser cluster returned an empty dataframe structure.")
+                return
 
-            # 3. Pipeline Segment Gamma: Metrics Display and Relational Database Injection
+            # 3. Pipeline Segment Gamma: Metrics Display and Relational Database Ingestion
             if clean_normalized_df is not None and not clean_normalized_df.empty:
                 st.success(f"✅ Success! Extracted and verified {len(clean_normalized_df)} individual course-multiplied rows with zero signature drops!")
                 
@@ -132,9 +138,10 @@ def render_ingestion_portal():
                     use_container_width=True
                 )
                 
-                # Write back directly to localized persistent storage layer
-                with st.spinner("💾 Committing structured records matrix down to relational database data lake..."):
+                # Write back directly to localized persistent sqlite tables structure
+                with st.spinner("💾 Committing structured records matrix down to relational database tables..."):
                     try:
+                        # Saves directly to seat_matrix table
                         save_matrix_records(clean_normalized_df)
                         st.balloons()
                         st.info("💾 Operations Log: Target matrices committed and validated inside the local storage infrastructure successfully.")
@@ -147,3 +154,4 @@ def render_ingestion_portal():
 
 if __name__ == "__main__":
     render_ingestion_portal()
+    
