@@ -6,22 +6,25 @@ from langchain_core.prompts import PromptTemplate
 
 class CETSeatMatrixParser:
     """
-    Advanced Sticky Metadata Look-Ahead State Machine Parser for PragyanAI.
-    Natively handles complex Markdown tables and horizontal text-wraps. 
-    Locks college details in memory to cleanly generate a separate row per course discipline.
+    Advanced Sticky Metadata Hybrid Parser for PragyanAI.
+    Natively handles complex Markdown table blocks and text row deformations.
+    Duplicates parent institutional metadata columns exactly while generating 
+    distinct individual rows per course discipline to eliminate signature violations.
     """
     def __init__(self):
-        # Upgraded to high-throughput versatile model to resolve complex layout deformations
+        # High-capacity versatile model to handle complex layout parsing and formatting recovery
         self.llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.0)
         
+        # Explicit prompt to split horizontally lumped or visually wrapped tracks into distinct rows
         self.recovery_template = PromptTemplate.from_template("""
         You are an elite data engineering extraction agent specialized in structural matrix normalization.
         Analyze the following text block from an engineering seat allocation document. 
-        Even if multiple course/department names are lumped together horizontally or wrapped across lines,
-        you must break them apart. 
         
-        For EVERY single individual engineering branch found (e.g., Computer Science, Electrical, Mechanical, Civil, etc.), 
-        generate a separate JSON object. Keep the college name, city, district, and address completely identical for each row.
+        The text may contain complex layouts, wrapped text rows, or raw Markdown grid tables with vertical boundary pipes (|).
+        Even if multiple course/department names are lumped together horizontally or wrapped across lines, you must break them apart.
+        
+        For EVERY single individual engineering branch found (e.g., Computer Science, Electrical, Mechanical, Civil, Automobile, etc.), 
+        generate a separate JSON object. Keep the college_name, city, district, and address completely identical for each row.
         
         Return the results strictly formatted inside a single valid JSON array of objects. 
         Do not include any preamble, markdown code blocks, or conversational commentary.
@@ -41,7 +44,7 @@ class CETSeatMatrixParser:
             "city": "Challakere",
             "district": "Chitradurga",
             "address": "BALLARI ROAD CHALLAKERE,CHITRADURGA",
-            "dept": "ELECTRICAL AND ELECTRONICS ENGINEERING",
+            "dept": "AUTOMOBILE ENGINEERING",
             "intake": 60
           }}
         ]
@@ -58,6 +61,7 @@ class CETSeatMatrixParser:
             
             clean_content = response.strip()
             
+            # Robust boundary handler sweeps and clips out markdown tags to isolate the raw JSON array bounds
             if "```json" in clean_content:
                 json_str = clean_content.split("```json")[-1].split("```")[0].strip()
             elif "```" in clean_content:
@@ -97,17 +101,18 @@ class CETSeatMatrixParser:
         current_address = None
         inside_table = False
         
+        # Track the last successfully parsed track to capture split-line trailing blocks
         last_parsed_dept = None
         
         # Clean out quotes and markdown bold markers to prevent formatting variants
         lines = [line.strip().replace('"', '').replace('*', '') for line in raw_text.split('\n') if line.strip()]
 
         for line in lines:
+            # Skip pure markdown grid spacer lines (e.g., |---|---|---|)
             if re.match(r'^[\s\|:\-]+$', line):
                 continue
 
             # 1. METADATA LAYER: Detect campus profile indices and geographic boundaries
-            # Upgraded from re.match to re.search to capture headers wrapped inside table columns
             meta_match = re.search(
                 r'(?:^|\|)[\s#]*(\d+)[\s,\|]+([^,\|]+(?:Registrar|College|Institute|University|VISVESWARIAH|Govt|Management)[^,\|]*)[,\|][\s]*([^,\|]+)[,\|][\s]*([^,\n\|]+)', 
                 line, 
@@ -115,10 +120,12 @@ class CETSeatMatrixParser:
             )
             
             if meta_match and not any(k in line for k in ["Address", "Intake", "Total", "Sl.No.", "SL.No."]):
+                # Lock target variables into sticky context states
                 current_college = meta_match.group(2).strip()
                 current_city = meta_match.group(3).strip()
                 current_district = meta_match.group(4).replace('|', '').strip()
                 
+                # Reset table boundary scopes and look-ahead tracks for the new section
                 inside_table = False
                 last_parsed_dept = None
                 continue
@@ -140,7 +147,6 @@ class CETSeatMatrixParser:
                 
             # 4. DETERMINISTIC DYNAMIC ROW MULTIPLICATION LOOP
             if inside_table or current_college:
-                # Optimized regex safely pulls text components out from markdown table pipes
                 row_match = re.match(r'^[\s\|]*(\d*)[\s,\|]*([A-Z&\s\(\)\-\/\+\.\b]+?)[\s,\|]+(\d+)[\s\|]*$', line, re.IGNORECASE)
                 
                 if row_match:
@@ -155,7 +161,7 @@ class CETSeatMatrixParser:
                             
                         last_parsed_dept = dept_candidate
                         
-                        # Append the clean row, binding the new department to the sticky metadata
+                        # Append a clean row, binding the new department to the sticky metadata
                         extracted_records.append({
                             "college_name": current_college,
                             "city": current_city,
@@ -167,7 +173,7 @@ class CETSeatMatrixParser:
                         })
                         continue
                 
-                # Check for implicit numeric strings trailing directly after active sections
+                # Look-Ahead: Check for implicit numeric strings trailing directly after active sections
                 num_match = re.findall(r'\b\d+\b', line)
                 if num_match and last_parsed_dept and len(line.replace('|', '').strip()) < 15:
                     intake_val = int(num_match[-1])
@@ -200,12 +206,12 @@ class CETSeatMatrixParser:
         is_signature_violated = False
         if not df_final.empty:
             for dept_str in df_final['dept'].astype(str):
-                # If regex accidently merged multiple branches into a single string cell
+                # If regex accidentally merged multiple branches into a single string cell
                 if len(dept_str) > 75 or any(dept_str.count(kw) > 1 for kw in ["ENGINEERING", "SCIENCE"]) or "SEATS" in dept_str:
                     is_signature_violated = True
                     break
 
-        # Fallback to the llama-3.3-70b-versatile architecture if a lumped layout violation is detected
+        # Fallback to the llama-3.3-70b-versatile architecture if an un-fragmented violation is detected
         if df_final.empty or is_signature_violated or df_final['dept'].isna().sum() > (len(df_final) * 0.1):
             df_final = self._parse_via_llm_fallback(raw_text, intake_year)
             
