@@ -24,7 +24,7 @@ for module_key in list(sys.modules.keys()):
 
 import pandas as pd
 from engines.ensemble_orchestrator import PragyanEnsembleParser
-from engines.enrichment_engine import CollegeEnrichmentEngine  # 💡 Healed: Direct Naming Link Alignment
+from engines.enrichment_engine import CollegeEnrichmentEngine  
 from database.db_handler import save_matrix_records
 
 def render_ingestion_portal():
@@ -81,8 +81,8 @@ def render_ingestion_portal():
             # 2. Pipeline Segment Beta: Cross-Validation & Asynchronous Web Enrichment Rails
             with st.spinner("🧠 Running parallel web enrichment (SerpAPI Google Search + Wikipedia + DuckDuckGo)..."):
                 try:
-                    # Instantiating the newly aligned asynchronous engine component
-                    enricher = CollegeEnrichmentEngine()  # 💡 Aligned Class Initialization Hook
+                    # Instantiating the aligned asynchronous engine component
+                    enricher = CollegeEnrichmentEngine()  
                     
                     # Process the extracted rows through the enrichment engine loop
                     if raw_extracted_df is not None and not raw_extracted_df.empty:
@@ -115,7 +115,8 @@ def render_ingestion_portal():
                         clean_normalized_df = pd.DataFrame()
                         
                 except Exception as enrichment_err:
-                    st.error(f"❌ Critical Error during Post-Extraction Enrichment Layer: {str(extraction_err)}")
+                    # 💡 FIXED: Re-aligned variable reference to enrichment_err to eliminate UnboundLocalError
+                    st.error(f"❌ Critical Error during Post-Extraction Enrichment Layer: {str(enrichment_err)}")
                     return
 
             # 3. Pipeline Segment Gamma: Metrics Display and Relational Database Injection
@@ -138,7 +139,6 @@ def render_ingestion_portal():
                         st.error(f"❌ Database Transaction Failure: {str(db_err)}")
             else:
                 st.error("❌ Spatial Processing Failure: The framework returned an empty layout dataframe. Check alignment parameters or original file formats.")
-                st.warning("💡 Advice: Ensure the source document matches KEA target signatures and that valid AI API credits are assigned inside your .env configuration.")
     else:
         st.info("💡 Standby: Upload a source PDF seat matrix document file layout above to open execution controls.")
 
